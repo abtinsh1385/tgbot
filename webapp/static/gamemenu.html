@@ -1,0 +1,44 @@
+<!-- <!DOCTYPE html>
+<html>
+    <h1>
+        Games
+    </h1>
+</html> -->
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>بازی حدس عدد</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            font-family: Tahoma, sans-serif;
+            text-align: center;
+            padding: 30px;
+            background: var(--tg-theme-bg-color, #fff);
+            color: var(--tg-theme-text-color, #000);
+        }
+        input { padding: 10px; font-size: 18px; width: 80px; text-align: center; }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            margin-top: 15px;
+            background: var(--tg-theme-button-color, #2481cc);
+            color: var(--tg-theme-button-text-color, #fff);
+            border: none;
+            border-radius: 8px;
+        }
+        #result { margin-top: 20px; font-size: 18px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h2>🎲 عددی بین ۱ تا ۱۰ حدس بزن</h2>
+    <input type="number" id="guess" min="1" max="10" value="5">
+    <br>
+    <button onclick="submitGuess()">حدس بزن</button>
+    <p id="result"></p>
+    <p id="balance"></p>
+
+    <script src="/static/game.js"></script>
+</body>
+</html>
