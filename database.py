@@ -228,14 +228,25 @@ class Database:
         return json.loads(row["settings"]).get(key, default)
 
     async def set_chat_setting(self, chat_id: int, key: str, value: Any) -> None:
+        await self.conn.execute(
+        """
+        INSERT OR IGNORE INTO chats (chat_id, chat_type, created_at, updated_at)
+        VALUES (?, 'unknown', ?, ?)
+        """,
+        (chat_id, _now(), _now()),
+        )
+
         row = await self.fetchone(
             "SELECT settings FROM chat_settings WHERE chat_id = ?", (chat_id,)
         )
         data = json.loads(row["settings"]) if row else {}
         data[key] = value
         await self.conn.execute(
-            "UPDATE chat_settings SET settings = ? WHERE chat_id = ?",
-            (json.dumps(data, ensure_ascii=False), chat_id),
+            """
+            INSERT INTO chat_settings (chat_id, settings) VALUES (?, ?)
+            ON CONFLICT(chat_id) DO UPDATE SET settings = excluded.settings
+            """,
+            (chat_id, json.dumps(data, ensure_ascii=False)),
         )
 
     # -- economy (global wallets) -------------------------------------------
