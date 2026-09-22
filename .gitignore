@@ -220,4 +220,8 @@ __marimo__/
 # Bot database
 *.db
 *.db-shm
+<<<<<<< HEAD
 *.db-wal
+=======
+*.db-wal
+>>>>>>> 5369f5d3c02694fcb15f72594ce67c6f92085b41
