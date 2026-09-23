@@ -156,7 +156,7 @@ async def cmd_antiad(message: Message, db: Database) -> None:
     await message.answer(f"ضد تبلیغ: {state}")
     
 
-@router.message()
+@router.message(F.text, ~F.text.startswith("/"))
 async def anti_ad_watcher(message: Message, db: Database) -> None:
 
     if message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
