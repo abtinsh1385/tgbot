@@ -11,32 +11,79 @@
             padding: 20px;
             background: var(--tg-theme-bg-color, #fff);
             color: var(--tg-theme-text-color, #000);
+        }
+        .header {
             text-align: center;
+            margin-bottom: 24px;
         }
         #group-photo {
-            width: 96px;
-            height: 96px;
+            width: 80px;
+            height: 80px;
             border-radius: 50%;
             object-fit: cover;
-            margin-top: 10px;
             background: #ddd;
         }
         #group-title {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: bold;
-            margin-top: 12px;
+            margin-top: 10px;
         }
-        #status {
-            margin-top: 8px;
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 4px;
+            border-bottom: 1px solid rgba(128,128,128,0.2);
+        }
+        .setting-label {
+            font-size: 15px;
+        }
+        .setting-desc {
+            font-size: 12px;
             color: gray;
-            font-size: 14px;
+            margin-top: 2px;
         }
+        /* سوییچ سفارشی */
+        .switch {
+            width: 46px;
+            height: 26px;
+            border-radius: 13px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.2s;
+            flex-shrink: 0;
+        }
+        .switch.on { background: #4caf50; }
+        .switch.off { background: #ccc; }
+        .switch-knob {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: white;
+            position: absolute;
+            top: 2px;
+            transition: right 0.2s;
+        }
+        .switch.on .switch-knob { right: 2px; }
+        .switch.off .switch-knob { right: 20px; }
+        .switch.loading { opacity: 0.5; pointer-events: none; }
     </style>
 </head>
 <body>
-    <img id="group-photo" src="" alt="عکس گروه">
-    <div id="group-title">در حال بارگذاری...</div>
-    <div id="status"></div>
+    <div class="header">
+        <img id="group-photo" src="" alt="عکس گروه">
+        <div id="group-title">در حال بارگذاری...</div>
+    </div>
+
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">🛡️ ضدتبلیغ</div>
+            <div class="setting-desc">حذف خودکار پیام‌های حاوی لینک یا تبلیغ</div>
+        </div>
+        <div class="switch off" id="antiAdSwitch" onclick="toggleAntiAd()">
+            <div class="switch-knob"></div>
+        </div>
+    </div>
 
     <script>
         const tg = window.Telegram.WebApp;
@@ -45,6 +92,11 @@
 
         const urlParams = new URLSearchParams(window.location.search);
         const chatId = urlParams.get('chat_id');
+
+        function setSwitchState(el, isOn) {
+            el.classList.remove('on', 'off');
+            el.classList.add(isOn ? 'on' : 'off');
+        }
 
         async function loadGroupInfo() {
             if (!chatId) {
@@ -62,21 +114,47 @@
                 }
 
                 document.getElementById('group-title').innerText = data.title;
-
                 if (data.has_photo) {
                     document.getElementById('group-photo').src = `/api/chat-photo/${chatId}`;
-                } else {
-                    document.getElementById('group-photo').style.display = 'none';
                 }
-
-                document.getElementById('status').innerText = `آیدی گروه: ${chatId}`;
             } catch (err) {
                 document.getElementById('group-title').innerText = "خطا در دریافت اطلاعات";
+            }
+        }
+
+        async function loadSettings() {
+            try {
+                const res = await fetch(`/api/settings/${chatId}`);
+                const data = await res.json();
+                setSwitchState(document.getElementById('antiAdSwitch'), data.anti_ad);
+            } catch (err) {
                 console.error(err);
             }
         }
 
+        async function toggleAntiAd() {
+            const el = document.getElementById('antiAdSwitch');
+            el.classList.add('loading');
+
+            try {
+                const res = await fetch(`/api/settings/${chatId}/toggle_ad`, {
+                    method: 'POST',
+                    headers: {
+                     'X-Telegram-Init-Data': tg.initData
+        }
+                });
+                const data = await res.json();
+                setSwitchState(el, data.anti_ad);
+                tg.HapticFeedback.impactOccurred('light');
+            } catch (err) {
+                tg.showAlert('خطا در تغییر تنظیمات');
+            } finally {
+                el.classList.remove('loading');
+            }
+        }
+
         loadGroupInfo();
+        loadSettings();
     </script>
 </body>
 </html>
