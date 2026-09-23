@@ -9,3 +9,5 @@ PANEL_URL = os.getenv("PANEL_URL", "https://laughing-happiness-jvpg5p9g6xw2599q-
 
 # Future knobs (economy, minigames, ...) can live here too, e.g.:
 # DAILY_BONUS = 100
+
+# run the webapp server: uvicorn webapp.server:app --host 0.0.0.0 --port 8000 --reload
