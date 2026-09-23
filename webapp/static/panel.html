@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>پنل تنظیمات گروه</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: Tahoma, sans-serif;
+            padding: 20px;
+            background: var(--tg-theme-bg-color, #fff);
+            color: var(--tg-theme-text-color, #000);
+            text-align: center;
+        }
+        #group-photo {
+            width: 96px;
+            height: 96px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin-top: 10px;
+            background: #ddd;
+        }
+        #group-title {
+            font-size: 20px;
+            font-weight: bold;
+            margin-top: 12px;
+        }
+        #status {
+            margin-top: 8px;
+            color: gray;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <img id="group-photo" src="" alt="عکس گروه">
+    <div id="group-title">در حال بارگذاری...</div>
+    <div id="status"></div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const chatId = urlParams.get('chat_id');
+
+        async function loadGroupInfo() {
+            if (!chatId) {
+                document.getElementById('group-title').innerText = "خطا: آیدی گروه پیدا نشد";
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/chat-info/${chatId}`);
+                const data = await res.json();
+
+                if (data.error) {
+                    document.getElementById('group-title').innerText = "خطا: " + data.error;
+                    return;
+                }
+
+                document.getElementById('group-title').innerText = data.title;
+
+                if (data.has_photo) {
+                    document.getElementById('group-photo').src = `/api/chat-photo/${chatId}`;
+                } else {
+                    document.getElementById('group-photo').style.display = 'none';
+                }
+
+                document.getElementById('status').innerText = `آیدی گروه: ${chatId}`;
+            } catch (err) {
+                document.getElementById('group-title').innerText = "خطا در دریافت اطلاعات";
+                console.error(err);
+            }
+        }
+
+        loadGroupInfo();
+    </script>
+</body>
+</html>
