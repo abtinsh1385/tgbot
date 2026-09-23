@@ -303,13 +303,13 @@ async def anti_ad_watcher(message: Message, db: Database) -> None:
     if not looks_like_ad(t):
         return 
     
-    whitlist=await db.get_chat_setting(message.chat.id,"ad_whitelist",[])
-    if whitlist and _whitelisted(message.text,whitlist):
+    whitelist=await db.get_chat_setting(message.chat.id,"ad_whitelist",[])
+    if whitelist and _whitelisted(message.text,whitelist):
         return 
 
     member = await message.chat.get_member(message.from_user.id)
-    if member.status in ("administrator", "creator"):
-        return
+    # if member.status in ("administrator", "creator"):
+    #     return
 
     try:
         await message.delete()
