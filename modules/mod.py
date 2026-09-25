@@ -156,6 +156,141 @@ async def cmd_antiad(message: Message, db: Database) -> None:
     await message.answer(f"ضد تبلیغ: {state}")
     
 
+@router.message(Command("mute", "timeout"))
+async def cmd_mute(message: Message, command: CommandObject, db: Database) -> None:
+    if message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        await message.answer("این کامند فقط داخل گروه کار میکنه")
+        return
+    if not await _require_admin(message, db):
+        await message.answer("فقط ادمین می تواند این کامند رو وارد کند")
+        return
+    if not await _is_bot_admin_safe(message):
+        await message.answer("من ادمین این گروه نیستم! اول من رو ادمین کنید.")
+        return
+
+    target_arg, duration_arg = split_target_and_duration(command.args)
+    duration = parse_duration(duration_arg)
+    if duration is None:
+        await message.answer(
+            "❗️ فرمت درست:\n"
+            "• ریپلای روی پیام کاربر: /mute 30m\n"
+            "• با یوزرنیم: /mute @user 2h\n"
+            "• با آیدی عددی: /mute 123456789 1d\n"
+            "واحدها: m (دقیقه) — h (ساعت) — d (روز) — w (هفته)\n"
+            "حد مجاز: از ۱۰ دقیقه تا ۳۰ روز"
+        )
+        return
+
+    target = await _resolve_target(message, target_arg, db)
+    if target is None:
+        await message.answer("❗️ کاربر پیدا نشد. ریپلای کنید یا آیدی عددی بدهید.")
+        return
+    if target.id == (await message.bot.get_me()).id:
+        await message.answer("😂 خودم رو نمی‌تونم mute کنم!")
+        return
+
+    try:
+        await message.bot.restrict_chat_member(
+            chat_id=message.chat.id,
+            user_id=target.id,
+            permissions=_perms(False),
+            until_date=message.date + duration,
+        )
+    except (TelegramForbiddenError, TelegramBadRequest) as e:
+        await message.answer(f"❌ موفق نشدم: {e}")
+        return
+    await message.answer(
+        f"🔇 {target.full_name} تا {_fmt_delta(duration)} دیگر ساکت شد."
+    )
+
+
+@router.message(Command("unmute"))
+async def cmd_unmute(message: Message, command: CommandObject, db: Database) -> None:
+    if message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        await message.answer("این کامند فقط داخل گروه کار میکنه")
+        return
+    if not await _require_admin(message, db):
+        await message.answer("فقط ادمین میتواند این کامند را وارد کند")
+        return
+    if not await _is_bot_admin_safe(message):
+        await message.answer("من ادمین این گروه نیستم!")
+        return
+    target_arg, _ = split_target_and_duration(command.args)
+    target = await _resolve_target(message, target_arg, db)
+    if target is None:
+        await message.answer("❗️ کاربر پیدا نشد. ریپلای کنید یا آیدی عددی بدهید.")
+        return
+    try:
+        await message.bot.restrict_chat_member(
+            chat_id=message.chat.id,
+            user_id=target.id,
+            permissions=_perms(True),
+        )
+    except (TelegramForbiddenError, TelegramBadRequest) as e:
+        await message.answer(f"❌ موفق نشدم: {e}")
+        return
+    await message.answer(f"🔊 {target.full_name} از حالت سکوت خارج شد.")
+
+
+@router.message(Command("ban"))
+async def cmd_ban(message: Message, command: CommandObject, db: Database) -> None:
+    if message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        await message.answer("این کامند فقط داخل گروه کار میکنه")
+        return
+    if not await _require_admin(message, db):
+        await message.answer("فقط ادمین میتواند این کامند را وارد کند")
+        return
+    if not await _is_bot_admin_safe(message):
+        await message.answer("من ادمین این گروه نیستم! اول من رو ادمین کنید.")
+        return
+    target_arg, _ = split_target_and_duration(command.args)
+    target = await _resolve_target(message, target_arg, db)
+    if target is None:
+        await message.answer("❗️ کاربر پیدا نشد. ریپلای کنید یا آیدی عددی بدهید.")
+        return
+    if target.id == (await message.bot.get_me()).id:
+        await message.answer("😂 اخراج خودم ممکن نیست!")
+        return
+    try:
+        await message.bot.ban_chat_member(
+            chat_id=message.chat.id,
+            user_id=target.id,
+            until_date=message.date + timedelta(days=366), 
+        )
+    except (TelegramForbiddenError, TelegramBadRequest) as e:
+        await message.answer(f"❌ موفق نشدم: {e}")
+        return
+    await message.answer(f"🔨 {target.full_name} از گروه اخراج شد.")
+
+
+@router.message(Command("unban"))
+async def cmd_unban(message: Message, command: CommandObject, db: Database) -> None:
+    if message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        await message.answer("این کامند فقط داخل گروه کار میکنه")
+        return
+    if not await _require_admin(message, db):
+        await message.answer("فقط ادمین میتواند این کامند را وارد کند")
+        return
+    if not await _is_bot_admin_safe(message):
+        await message.answer("من ادمین این گروه نیستم!")
+        return
+    target_arg, _ = split_target_and_duration(command.args)
+    target = await _resolve_target(message, target_arg, db)
+    if target is None:
+        await message.answer("❗️ کاربر پیدا نشد. آیدی عددی یا @username بدهید.")
+        return
+    try:
+        await message.bot.unban_chat_member(
+            chat_id=message.chat.id,
+            user_id=target.id,
+            only_if_banned=True,
+        )
+    except (TelegramForbiddenError, TelegramBadRequest) as e:
+        await message.answer(f"❌ موفق نشدم: {e}")
+        return
+    await message.answer(f"✅ {target.full_name} رفع اخراج شد.")
+
+
 @router.message(F.text, ~F.text.startswith("/"))
 async def anti_ad_watcher(message: Message, db: Database) -> None:
 
