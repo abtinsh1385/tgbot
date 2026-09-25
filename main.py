@@ -6,7 +6,7 @@ from aiogram.filters import Command
 
 from config import TOKEN
 from database import Database, InsufficientFunds, UnknownUser
-from modules import mod, panel
+from modules import mod, panel, economy
 from modules.panel import is_group_admin, _PANEL_ARGS_RE
 from config import PANEL_URL
 from aiogram.filters import CommandObject
@@ -22,6 +22,7 @@ db = Database()
 
 dp.include_router(mod.router)
 dp.include_router(panel.router)
+dp.include_router(economy.router)
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, command: CommandObject):

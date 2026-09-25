@@ -4,8 +4,10 @@
 
 import os
 
-TOKEN = os.getenv("BOT_TOKEN", "8809834415:AAHJQlSe-vTM5aEH59C-eR1cKJIEY6Y_sKM")
+TOKEN = os.getenv("BOT_TOKEN", "8362879362:AAHhgyVJL5jzbiDYHPE8TEGDe4C1lmgf1ks")
 PANEL_URL = os.getenv("PANEL_URL", "https://laughing-happiness-jvpg5p9g6xw2599q-8000.app.github.dev/panel")
 
 # Future knobs (economy, minigames, ...) can live here too, e.g.:
 # DAILY_BONUS = 100
+
+# run the webapp server: uvicorn webapp.server:app --host 0.0.0.0 --port 8000 --reload
