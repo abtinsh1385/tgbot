@@ -6,9 +6,9 @@ from aiogram.filters import Command
 
 from config import TOKEN
 from database import Database, InsufficientFunds, UnknownUser
-from modules import members, mod, panel,economy
+from modules import members, mod, panel,economy, minigames
 from modules.panel import is_group_admin, _PANEL_ARGS_RE
-from config import PANEL_URL
+from config import PANEL_URL, GAMEMENU_URL
 from aiogram.filters import CommandObject
 from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton
 import re
@@ -27,6 +27,7 @@ dp.include_router(members.router)
 dp.include_router(panel.router)
 dp.include_router(mod.router)
 dp.include_router(economy.router)
+dp.include_router(minigames.router)
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, command: CommandObject):
@@ -65,10 +66,20 @@ async def cmd_start(message: types.Message, command: CommandObject):
 
     await message.answer("سلام! من فعال هستم ✅")
 
+from aiogram.types import MenuButtonWebApp, WebAppInfo
+
+async def setup_menu_button(bot: Bot):
+    await bot.set_chat_menu_button(
+        menu_button=MenuButtonWebApp(
+            text="🎮 بازی‌ها",
+            web_app=WebAppInfo(url=GAMEMENU_URL)
+        )
+    )
+
 
 async def main():
-    await db.connect()
-    # Re-apply or release a timed lock that was active when the bot stopped.
+    await db.connect()  
+    await setup_menu_button(bot)      
     try:
         await mod.restore_expired_locks(bot, db)
     except Exception as exc:  # never block startup on this

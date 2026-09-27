@@ -244,3 +244,42 @@ async def toggle_ad_mention(chat_id: int, x_telegram_init_data: str = Header(...
             "منع منشن برداشته شد."
         )
     return {"block_mentions": new_value}
+@app.get("/gamemenu")
+async def gamemenu_api():
+    return FileResponse(os.path.join(STATIC_DIR, "gamemenu.html"))
+
+
+@app.get("/api/user-info/{user_id}")
+async def get_user_info(user_id: int):
+    try:
+        chat = await bot.get_chat(user_id)  # برای چت خصوصی، chat_id == user_id
+    except (TelegramForbiddenError, TelegramBadRequest):
+        return {"error": "کاربر پیدا نشد یا بات به او دسترسی نداره"}
+
+    balance = await db.get_balance(user_id)
+
+    name = chat.first_name or chat.username or "کاربر"
+    if chat.last_name:
+        name += f" {chat.last_name}"
+
+    return {
+        "name": name,
+        "username": chat.username,
+        "balance": balance,
+    }
+
+
+@app.get("/api/user-photo/{user_id}")
+async def get_user_photo(user_id: int):
+    try:
+        photos = await bot.get_user_profile_photos(user_id, limit=1)
+    except (TelegramForbiddenError, TelegramBadRequest):
+        return {"error": "دسترسی به عکس کاربر ممکن نیست"}
+
+    if photos.total_count == 0:
+        return {"error": "no photo"}
+
+    # بزرگترین سایز عکس (آخرین آیتم لیست sizes)
+    biggest = photos.photos[0][-1]
+    file_bytes = await bot.download(biggest.file_id)
+    return StreamingResponse(io.BytesIO(file_bytes.read()), media_type="image/jpeg")

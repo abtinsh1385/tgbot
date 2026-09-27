@@ -1,44 +1,104 @@
-<!-- <!DOCTYPE html>
-<html>
-    <h1>
-        Games
-    </h1>
-</html> -->
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>بازی حدس عدد</title>
+    <title>منوی بازی‌ها</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
+        * { box-sizing: border-box; }
         body {
             font-family: Tahoma, sans-serif;
-            text-align: center;
-            padding: 30px;
+            padding: 20px;
             background: var(--tg-theme-bg-color, #fff);
             color: var(--tg-theme-text-color, #000);
+            text-align: center;
         }
-        input { padding: 10px; font-size: 18px; width: 80px; text-align: center; }
-        button {
-            padding: 12px 24px;
-            font-size: 16px;
-            margin-top: 15px;
+        #user-photo {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            background: #ddd;
+        }
+        #user-name {
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        #user-balance {
+            font-size: 15px;
+            color: #f5a623;
+            margin-top: 4px;
+        }
+        .game-list {
+            margin-top: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .game-btn {
+            padding: 14px;
+            border-radius: 10px;
             background: var(--tg-theme-button-color, #2481cc);
             color: var(--tg-theme-button-text-color, #fff);
             border: none;
-            border-radius: 8px;
+            font-size: 15px;
+            cursor: pointer;
         }
-        #result { margin-top: 20px; font-size: 18px; font-weight: bold; }
     </style>
 </head>
 <body>
-    <h2>🎲 عددی بین ۱ تا ۱۰ حدس بزن</h2>
-    <input type="number" id="guess" min="1" max="10" value="5">
-    <br>
-    <button onclick="submitGuess()">حدس بزن</button>
-    <p id="result"></p>
-    <p id="balance"></p>
+    <img id="user-photo" src="" alt="عکس کاربر">
+    <div id="user-name">در حال بارگذاری...</div>
+    <div id="user-balance"></div>
 
-    <script src="/static/game.js"></script>
+    <div class="game-list">
+        <button class="game-btn" onclick="openGame('guess')">🎲 حدس عدد</button>
+        <button class="game-btn" onclick="openGame('coinflip')">🪙 شیر یا خط</button>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        const userId = tg.initDataUnsafe.user?.id;
+
+        async function loadUserInfo() {
+            if (!userId) {
+                document.getElementById('user-name').innerText = "خطا: کاربر شناسایی نشد";
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/user-info/${userId}`);
+                const data = await res.json();
+
+                if (data.error) {
+                    document.getElementById('user-name').innerText = "خطا: " + data.error;
+                    return;
+                }
+
+                document.getElementById('user-name').innerText = data.name;
+                document.getElementById('user-balance').innerText = `💰 ${data.balance} سکه`;
+            } catch (err) {
+                document.getElementById('user-name').innerText = "خطا در دریافت اطلاعات";
+            }
+        }
+
+        async function loadUserPhoto() {
+            if (!userId) return;
+            const img = document.getElementById('user-photo');
+            img.src = `/api/user-photo/${userId}`;
+            img.onerror = () => { img.style.display = 'none'; };
+        }
+
+        function openGame(name) {
+            tg.sendData(JSON.stringify({ action: "open_game", game: name }));
+        }
+
+        loadUserInfo();
+        loadUserPhoto();
+    </script>
 </body>
 </html>

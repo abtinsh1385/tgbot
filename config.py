@@ -6,6 +6,7 @@ import os
 
 TOKEN = os.getenv("BOT_TOKEN", "8362879362:AAHhgyVJL5jzbiDYHPE8TEGDe4C1lmgf1ks")
 PANEL_URL = os.getenv("PANEL_URL", "https://laughing-happiness-jvpg5p9g6xw2599q-8000.app.github.dev/panel")
+GAMEMENU_URL = os.getenv("PANEL_URL", "https://laughing-happiness-jvpg5p9g6xw2599q-8000.app.github.dev/gamemenu")
 
 # Per-chat switches, stored in the chat_settings JSON blob (no schema change).
 # The bot drives them with commands; a panel can read/write the same keys.
