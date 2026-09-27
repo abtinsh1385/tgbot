@@ -94,6 +94,9 @@ class BlackjackGame(BaseGame):
         if player_val > 21:
             return await self._resolve(user_id, bust=True)
 
+        if player_val == 21:
+            return await self._resolve(user_id)
+
         print("HIT:", user_id, session["player"], session["dealer"])
         
 
