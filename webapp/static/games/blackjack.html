@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>بلک‌جک</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: Tahoma, sans-serif;
+            padding: 20px;
+            background: var(--tg-theme-bg-color, #fff);
+            color: var(--tg-theme-text-color, #000);
+            text-align: center;
+        }
+        #balance { font-size: 15px; color: #f5a623; margin-bottom: 16px; }
+
+        .hand-label { font-size: 14px; opacity: 0.7; margin-top: 16px; }
+        .cards { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin: 8px 0; min-height: 60px; }
+        .card {
+            width: 42px; height: 60px;
+            background: #fff; color: #222;
+            border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 16px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        .card.hidden { background: repeating-linear-gradient(45deg, #2481cc, #2481cc 4px, #1c649e 4px, #1c649e 8px); }
+        .value { font-size: 14px; margin-top: 2px; opacity: 0.8; }
+
+        .setup { margin-top: 20px; }
+        input#amount { width: 100%; max-width: 300px; padding: 10px; font-size: 16px; text-align: center; border-radius: 8px; border: 1px solid #ccc; margin: 10px 0; }
+        .bet-row { display: flex; gap: 6px; justify-content: center; margin-bottom: 10px; }
+        .bet-chip { padding: 6px 14px; border-radius: 20px; background: rgba(128,128,128,0.15); font-size: 13px; cursor: pointer; }
+
+        .action-row { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
+        button { padding: 12px 20px; border-radius: 10px; border: none; font-size: 15px; cursor: pointer; }
+        .btn-primary { background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); }
+        .btn-secondary { background: rgba(128,128,128,0.2); color: inherit; }
+        button:disabled { opacity: 0.5; }
+
+        #result { margin-top: 16px; font-size: 16px; font-weight: bold; min-height: 24px; }
+        #error { margin-top: 8px; color: #e53935; font-size: 14px; min-height: 20px; }
+    </style>
+</head>
+<body>
+    <div id="balance">موجودی: در حال بارگذاری...</div>
+
+    <div class="hand-label">دست حریف</div>
+    <div class="cards" id="dealer-cards"></div>
+    <div class="value" id="dealer-value"></div>
+
+    <div class="hand-label">دست شما</div>
+    <div class="cards" id="player-cards"></div>
+    <div class="value" id="player-value"></div>
+
+    <div class="setup" id="setup-area">
+        <div class="bet-row">
+            <div class="bet-chip" onclick="setAmount(50)">50</div>
+            <div class="bet-chip" onclick="setAmount(100)">100</div>
+            <div class="bet-chip" onclick="setAmount(250)">250</div>
+        </div>
+        <input type="number" id="amount" value="50" min="10" max="1000">
+        <button class="btn-primary" onclick="startGame()">شروع بازی</button>
+    </div>
+
+    <div class="action-row" id="action-area" style="display:none;">
+        <button class="btn-primary" onclick="hit()">Hit</button>
+        <button class="btn-secondary" onclick="stand()">Stand</button>
+    </div>
+
+    <div id="result"></div>
+    <div id="error"></div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+        tg.BackButton.show();
+        tg.BackButton.onClick(() => { window.location.href = '/gamemenu'; });
+
+        const userId = tg.initDataUnsafe.user?.id;
+
+        function setAmount(v) {
+            document.getElementById('amount').value = v;
+        }
+
+        function renderCards(elId, cards, hideSecond = false) {
+            const el = document.getElementById(elId);
+            el.innerHTML = '';
+            cards.forEach((c, i) => {
+                const div = document.createElement('div');
+                if (hideSecond && i === 1) {
+                    div.className = 'card hidden';
+                    div.innerText = '?';
+                } else {
+                    div.className = 'card';
+                    div.innerText = c;
+                }
+                el.appendChild(div);
+            });
+        }
+
+        async function loadBalance() {
+            const res = await fetch(`/api/user-info/${userId}`);
+            const data = await res.json();
+            if (!data.error) document.getElementById('balance').innerText = `موجودی: ${data.balance} سکه`;
+        }
+
+        function showError(msg) {
+            document.getElementById('error').innerText = msg;
+        }
+
+        async function callApi(payload) {
+            const res = await fetch('/api/games/blackjack/play', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...payload, initData: tg.initData })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'خطا');
+            return data;
+        }
+
+        function updateBoard(data, hideDealerSecond) {
+            renderCards('player-cards', data.player);
+            document.getElementById('player-value').innerText = data.player_value;
+
+            if (data.state === 'playing') {
+                renderCards('dealer-cards', [data.dealer_visible, '?'], false);
+                document.getElementById('dealer-value').innerText = '؟';
+                document.getElementById('setup-area').style.display = 'none';
+                document.getElementById('action-area').style.display = 'flex';
+            } else {
+                renderCards('dealer-cards', data.dealer);
+                document.getElementById('dealer-value').innerText = data.dealer_value;
+                document.getElementById('action-area').style.display = 'none';
+                document.getElementById('setup-area').style.display = 'block';
+                showFinalResult(data);
+            }
+
+            document.getElementById('balance').innerText = `موجودی: ${data.balance} سکه`;
+        }
+
+        function showFinalResult(data) {
+            const el = document.getElementById('result');
+            const labels = {
+                win: '✅ بردی!',
+                blackjack: '🎉 بلک‌جک! بردی!',
+                lose: '❌ باختی',
+                push: '🤝 مساوی شد',
+            };
+            el.innerText = `${labels[data.outcome] || data.outcome} (${data.delta >= 0 ? '+' : ''}${data.delta} سکه)`;
+            el.style.color = data.delta > 0 ? '#4caf50' : (data.delta < 0 ? '#e53935' : 'gray');
+
+            if (data.delta > 0) tg.HapticFeedback.notificationOccurred('success');
+            else if (data.delta < 0) tg.HapticFeedback.notificationOccurred('error');
+        }
+
+        async function startGame() {
+            showError('');
+            document.getElementById('result').innerText = '';
+            const amount = parseInt(document.getElementById('amount').value);
+            try {
+                const data = await callApi({ action: 'start', amount });
+                updateBoard(data);
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        async function hit() {
+            console.log("HIT clicked");
+
+            try {
+                const data = await callApi({ action: 'hit' });
+
+                console.log("HIT response:", data);
+
+                updateBoard(data);
+            } catch (err) {
+                console.error("HIT error:", err);
+                showError(err.message);
+            }
+        }
+
+        async function stand() {
+            try {
+                const data = await callApi({ action: 'stand' });
+                updateBoard(data);
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        loadBalance();
+    </script>
+</body>
+</html>

@@ -1,7 +1,9 @@
 from .coinflip import CoinflipGame
+from .blackjack import BlackjackGame
 
 GAME_CLASSES = [
     CoinflipGame,
+    BlackjackGame
 ]
 
 
