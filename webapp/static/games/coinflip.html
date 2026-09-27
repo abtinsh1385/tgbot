@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>شیر یا خط</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: Tahoma, sans-serif;
+            padding: 20px;
+            background: var(--tg-theme-bg-color, #fff);
+            color: var(--tg-theme-text-color, #000);
+            text-align: center;
+        }
+        #balance {
+            font-size: 16px;
+            color: #f5a623;
+            margin-bottom: 16px;
+        }
+
+        /* ---------- سکه‌ی سه‌بعدی ---------- */
+        .coin-stage {
+            width: 140px;
+            height: 140px;
+            margin: 20px auto;
+            perspective: 1000px;
+        }
+        .coin {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.15s;
+        }
+        .coin-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            backface-visibility: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 42px;
+            font-weight: bold;
+            color: #7a5a00;
+            box-shadow:
+                inset 0 0 0 6px rgba(255,255,255,0.35),
+                inset 0 0 20px rgba(0,0,0,0.25),
+                0 6px 14px rgba(0,0,0,0.35);
+            background: radial-gradient(circle at 35% 30%, #ffe9a8, #f5c542 55%, #d4a017 100%);
+            user-select: none;
+        }
+        .coin-face.tails {
+            transform: rotateY(180deg);
+            background: radial-gradient(circle at 35% 30%, #fff5d1, #e8b923 55%, #b8860b 100%);
+        }
+
+        /* چرخش وقتی در حال انداختن سکه‌ست */
+        .coin.spinning {
+            animation: spin-coin 1s cubic-bezier(0.34, 1.2, 0.4, 1);
+        }
+        @keyframes spin-coin {
+            0%   { transform: rotateY(0deg) translateY(0); }
+            25%  { transform: rotateY(900deg) translateY(-40px); }
+            50%  { transform: rotateY(1800deg) translateY(0); }
+            75%  { transform: rotateY(2700deg) translateY(-20px); }
+            100% { transform: rotateY(var(--final-angle, 3600deg)) translateY(0); }
+        }
+        /* حالت پرش کوچیک بعد از فرود، برای حس فیزیکی‌تر */
+        .coin.landed {
+            animation: bounce-land 0.3s ease-out;
+        }
+        @keyframes bounce-land {
+            0%   { transform: translateY(-8px) rotateY(var(--final-angle, 0deg)); }
+            60%  { transform: translateY(3px) rotateY(var(--final-angle, 0deg)); }
+            100% { transform: translateY(0) rotateY(var(--final-angle, 0deg)); }
+        }
+
+        .choice-row {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin: 16px 0;
+        }
+        .choice-btn {
+            flex: 1;
+            max-width: 140px;
+            padding: 12px;
+            border-radius: 10px;
+            border: 2px solid transparent;
+            background: rgba(128,128,128,0.15);
+            font-size: 15px;
+            cursor: pointer;
+            color: inherit;
+        }
+        .choice-btn.selected {
+            border-color: var(--tg-theme-button-color, #2481cc);
+            font-weight: bold;
+        }
+        input#amount {
+            width: 100%;
+            max-width: 300px;
+            padding: 10px;
+            font-size: 16px;
+            text-align: center;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            margin: 10px 0;
+        }
+        .bet-row {
+            display: flex;
+            gap: 6px;
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+        .bet-chip {
+            padding: 6px 14px;
+            border-radius: 20px;
+            background: rgba(128,128,128,0.15);
+            font-size: 13px;
+            cursor: pointer;
+        }
+        button#play-btn {
+            width: 100%;
+            max-width: 300px;
+            padding: 14px;
+            border-radius: 10px;
+            background: var(--tg-theme-button-color, #2481cc);
+            color: var(--tg-theme-button-text-color, #fff);
+            border: none;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button#play-btn:disabled {
+            opacity: 0.5;
+        }
+        #result {
+            margin-top: 16px;
+            font-size: 16px;
+            font-weight: bold;
+            min-height: 24px;
+        }
+        #error {
+            margin-top: 10px;
+            color: #e53935;
+            font-size: 14px;
+            min-height: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="balance">موجودی: در حال بارگذاری...</div>
+
+    <div class="coin-stage">
+        <div class="coin" id="coin">
+            <div class="coin-face heads">ش</div>
+            <div class="coin-face tails">خ</div>
+        </div>
+    </div>
+
+    <div class="choice-row">
+        <div class="choice-btn selected" id="btn-heads" onclick="selectChoice('heads')">شیر</div>
+        <div class="choice-btn" id="btn-tails" onclick="selectChoice('tails')">خط</div>
+    </div>
+
+    <div class="bet-row">
+        <div class="bet-chip" onclick="setAmount(50)">50</div>
+        <div class="bet-chip" onclick="setAmount(100)">100</div>
+        <div class="bet-chip" onclick="setAmount(250)">250</div>
+        <div class="bet-chip" onclick="setAmount(500)">500</div>
+    </div>
+    <input type="number" id="amount" value="50" min="10" max="1000">
+
+    <button id="play-btn" onclick="play()">بزن بریم 🎲</button>
+
+    <div id="result"></div>
+    <div id="error"></div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+        tg.BackButton.show();
+        tg.BackButton.onClick(() => {
+            window.location.href = '/gamemenu';
+        });
+
+        let choice = 'heads';
+        let currentRotation = 0;   // برای اینکه چرخش‌های بعدی از همون‌جا ادامه پیدا کنن
+        const userId = tg.initDataUnsafe.user?.id;
+        const coinEl = document.getElementById('coin');
+
+        function selectChoice(c) {
+            choice = c;
+            document.getElementById('btn-heads').classList.toggle('selected', c === 'heads');
+            document.getElementById('btn-tails').classList.toggle('selected', c === 'tails');
+        }
+
+        function setAmount(v) {
+            document.getElementById('amount').value = v;
+        }
+
+        async function loadBalance() {
+            if (!userId) return;
+            const res = await fetch(`/api/user-info/${userId}`);
+            const data = await res.json();
+            if (!data.error) {
+                document.getElementById('balance').innerText = `موجودی: ${data.balance} سکه`;
+            }
+        }
+
+        function spinCoinTo(result) {
+            return new Promise(resolve => {
+                // چند دور کامل بچرخه + بر اساس نتیجه، 0 یا 180 درجه اضافه بشه
+                const extraSpins = 5 * 360;
+                const finalFace = result === 'heads' ? 0 : 180;
+                const targetRotation = currentRotation + extraSpins + finalFace
+                    - (currentRotation % 360) + (finalFace - (currentRotation % 360) + 360) % 360;
+
+                // ساده و مطمئن‌تر: همیشه از صفر تا مقصد جدید حساب کن
+                const newRotation = Math.ceil(currentRotation / 360) * 360 + extraSpins + finalFace;
+
+                coinEl.style.setProperty('--final-angle', `${newRotation}deg`);
+                coinEl.classList.remove('spinning', 'landed');
+                void coinEl.offsetWidth; // ری‌فلو اجباری تا انیمیشن دوباره اجرا بشه
+                coinEl.classList.add('spinning');
+                coinEl.style.transform = `rotateY(${newRotation}deg)`;
+
+                currentRotation = newRotation;
+
+                setTimeout(() => {
+                    coinEl.classList.remove('spinning');
+                    coinEl.classList.add('landed');
+                    resolve();
+                }, 1000);
+            });
+        }
+
+        async function play() {
+            const amount = parseInt(document.getElementById('amount').value);
+            const btn = document.getElementById('play-btn');
+            const resultEl = document.getElementById('result');
+            const errorEl = document.getElementById('error');
+
+            errorEl.innerText = '';
+            resultEl.innerText = '';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/games/coinflip/play', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ choice, amount, initData: tg.initData })
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    errorEl.innerText = data.detail || 'خطایی رخ داد';
+                    btn.disabled = false;
+                    return;
+                }
+
+                await spinCoinTo(data.result);
+
+                if (data.won) {
+                    resultEl.style.color = '#4caf50';
+                    resultEl.innerText = `نتیجه: ${data.result === 'heads' ? 'شیر' : 'خط'} — ✅ بردی! +${data.delta} سکه`;
+                    tg.HapticFeedback.notificationOccurred('success');
+                } else {
+                    resultEl.style.color = '#e53935';
+                    resultEl.innerText = `نتیجه: ${data.result === 'heads' ? 'شیر' : 'خط'} — ❌ باختی. ${data.delta} سکه`;
+                    tg.HapticFeedback.notificationOccurred('error');
+                }
+
+                document.getElementById('balance').innerText = `موجودی: ${data.balance} سکه`;
+                btn.disabled = false;
+
+            } catch (err) {
+                errorEl.innerText = 'خطا در ارتباط با سرور';
+                btn.disabled = false;
+            }
+        }
+
+        loadBalance();
+    </script>
+</body>
+</html>

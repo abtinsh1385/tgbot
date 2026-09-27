@@ -53,7 +53,7 @@
     <div id="user-balance"></div>
 
     <div class="game-list">
-        <button class="game-btn" onclick="openGame('guess')">🎲 حدس عدد</button>
+        <!-- <button class="game-btn" onclick="openGame('guess')">🎲 حدس عدد</button> -->
         <button class="game-btn" onclick="openGame('coinflip')">🪙 شیر یا خط</button>
     </div>
 
@@ -93,8 +93,8 @@
             img.onerror = () => { img.style.display = 'none'; };
         }
 
-        function openGame(name) {
-            tg.sendData(JSON.stringify({ action: "open_game", game: name }));
+        function openGame(slug) {
+            window.location.href = `/games/${slug}`;
         }
 
         loadUserInfo();
