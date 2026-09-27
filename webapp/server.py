@@ -3,7 +3,7 @@ import hmac
 from permissions import for_chat
 from modules.mod import _exempt_admins
 from urllib.parse import parse_qsl
-from fastapi import FastAPI, Request, Header, HTTPException
+from fastapi import FastAPI, Request, Header, HTTPException, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 import sys, os, io
@@ -12,6 +12,8 @@ from config import TOKEN
 
 from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
 
+from webapp.auth import verify_init_data
+from webapp.games import build_registry
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import Database
@@ -19,6 +21,7 @@ from database import Database
 app = FastAPI()
 db = Database()
 bot = Bot(token=TOKEN)
+games = {}
 
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -51,6 +54,7 @@ async def verify_admin(chat_id: int, init_data: str) -> int:
 @app.on_event("startup")
 async def startup():
     await db.connect()
+    games.update(build_registry(db)) 
 
 
 @app.on_event("shutdown")
@@ -58,10 +62,32 @@ async def shutdown():
     await db.close()
 
 
-@app.get("/game")
+@app.get("/gamemenu")
 async def serve_game():
     return FileResponse(os.path.join(STATIC_DIR, "gamemenu.html"))
 
+@app.get("/games/{slug}")
+async def game_page(slug: str):
+    game = games.get(slug)
+    if not game:
+        raise HTTPException(status_code=404, detail="not found")
+    return FileResponse(os.path.join(STATIC_DIR, "games", game.html_file))
+
+@app.get("/api/games")
+async def list_games():
+    return [{"slug": g.slug, "name": g.name, "emoji": g.emoji} for g in games.values()]
+
+
+@app.post("/api/games/{slug}/play")
+async def play_game(slug: str, payload: dict = Body(...)):
+    game = games.get(slug)
+    if not game:
+        raise HTTPException(status_code=404, detail="بازی پیدا نشد")
+
+    init_data = payload.pop("initData", "")
+    user = verify_init_data(init_data)
+
+    return await game.play(user["id"], payload)
 
 @app.get("/")
 async def mainpage():
