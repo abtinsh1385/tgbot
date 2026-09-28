@@ -6,7 +6,7 @@ from aiogram.filters import Command
 
 from config import TOKEN
 from database import Database, InsufficientFunds, UnknownUser
-from modules import mod, panel, economy
+from modules import members, mod, panel,economy
 from modules.panel import is_group_admin, _PANEL_ARGS_RE
 from config import PANEL_URL
 from aiogram.filters import CommandObject
@@ -20,6 +20,10 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 db = Database()
 
+# Record who is in each group before the command handlers run. Middleware,
+# not a catch-all handler, so anti-ad still receives every message.
+dp.message.middleware(members.record_message_sender)
+dp.include_router(members.router)
 dp.include_router(mod.router)
 dp.include_router(panel.router)
 dp.include_router(economy.router)
@@ -63,11 +67,22 @@ async def cmd_start(message: types.Message, command: CommandObject):
 
 
 async def main():
-    await db.connect()        
+    await db.connect()
+    # Re-apply or release a timed lock that was active when the bot stopped.
     try:
-        await dp.start_polling(bot, db=db)
+        await mod.restore_expired_locks(bot, db)
+    except Exception as exc:  # never block startup on this
+        log.warning("Lock reconciliation failed: %s", exc)
+    try:
+        # chat_member is required, otherwise joins/leaves never reach us and
+        # members.py cannot record them.
+        await dp.start_polling(
+            bot,
+            db=db,
+            allowed_updates=dp.resolve_used_update_types(),
+        )
     finally:
-        await db.close()      
+        await db.close()
 
 if __name__ == "__main__":
     asyncio.run(main())

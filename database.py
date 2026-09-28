@@ -103,6 +103,28 @@ MIGRATIONS: list[str] = [
         net       INTEGER NOT NULL DEFAULT 0,     -- net coins won/lost
         PRIMARY KEY (user_id, game)
     );
+
+    -- v2: which users the bot has seen in which chat, and in what role.
+    -- Needed for per-chat features such as /mentionall. Existing databases
+    -- already carry this table; the IF NOT EXISTS keeps both cases safe.
+    CREATE TABLE IF NOT EXISTS chat_members (
+        chat_id       INTEGER NOT NULL
+                      REFERENCES chats(chat_id) ON DELETE CASCADE,
+        user_id       INTEGER NOT NULL
+                      REFERENCES users(user_id) ON DELETE CASCADE,
+        status        TEXT NOT NULL DEFAULT 'member',
+        first_seen_at INTEGER NOT NULL,
+        joined_at     INTEGER,
+        left_at       INTEGER,
+        last_seen_at  INTEGER NOT NULL,
+        updated_at    INTEGER NOT NULL,
+        source        TEXT NOT NULL DEFAULT 'live',
+        PRIMARY KEY (chat_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_members_user
+        ON chat_members (user_id, status);
+    CREATE INDEX IF NOT EXISTS idx_chat_members_chat_status
+        ON chat_members (chat_id, status);
     """,
 ]
 
@@ -167,18 +189,23 @@ class Database:
 
     async def ensure_user(self, user_id: int, username: Optional[str],
                           first_name: Optional[str]) -> aiosqlite.Row:
-        """Insert the user if new; refresh username/first_name if changed."""
+        """
+        Insert the user if new, otherwise refresh the profile fields.
+
+        COALESCE matters here: group events can carry only a name and no
+        username, and that must not wipe a username we already know.
+        """
         now = _now()
         await self.conn.execute(
             """
             INSERT INTO users (user_id, username, first_name, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
-                username   = excluded.username,
-                first_name = excluded.first_name,
+                username   = COALESCE(excluded.username, users.username),
+                first_name = COALESCE(excluded.first_name, users.first_name),
                 updated_at = excluded.updated_at
-            WHERE users.username  IS NOT excluded.username
-               OR users.first_name IS NOT excluded.first_name
+            WHERE users.username  IS NOT COALESCE(excluded.username, users.username)
+               OR users.first_name IS NOT COALESCE(excluded.first_name, users.first_name)
             """,
             (user_id, username, first_name, now, now),
         )
@@ -195,6 +222,93 @@ class Database:
         """Note: Telegram usernames change often; prefer user ids when possible."""
         return await self.fetchone(
             "SELECT * FROM users WHERE username = ? COLLATE NOCASE", (username,)
+        )
+
+    async def get_users_in_chat(self, chat_id: int) -> list[aiosqlite.Row]:
+        """Users the bot has seen in this chat, with a usable username."""
+        return await self.fetchall(
+            """
+            SELECT u.user_id, u.username, u.first_name, m.last_seen_at
+            FROM users AS u
+            JOIN chat_members AS m ON m.user_id = u.user_id
+            WHERE m.chat_id = ?
+              AND m.status NOT IN ('left', 'kicked')
+              AND u.username IS NOT NULL
+            ORDER BY m.last_seen_at DESC
+            """,
+            (chat_id,),
+        )
+
+    async def get_chats_by_type(self, *chat_types: str) -> list[aiosqlite.Row]:
+        """Stored chats, optionally filtered by type (group, supergroup, ...)."""
+        if not chat_types:
+            return await self.fetchall("SELECT * FROM chats ORDER BY chat_id")
+        placeholders = ",".join("?" for _ in chat_types)
+        return await self.fetchall(
+            f"SELECT * FROM chats WHERE chat_type IN ({placeholders}) "
+            "ORDER BY chat_id",
+            chat_types,
+        )
+
+    async def get_unlinked_users(self) -> list[aiosqlite.Row]:
+        """Users the bot knows (e.g. from /start) but has never linked to a chat."""
+        return await self.fetchall(
+            """
+            SELECT u.user_id, u.username, u.first_name
+            FROM users AS u
+            WHERE NOT EXISTS (
+                SELECT 1 FROM chat_members AS m WHERE m.user_id = u.user_id
+            )
+            ORDER BY u.updated_at DESC
+            """
+        )
+
+    async def upsert_chat_member(
+        self,
+        chat_id: int,
+        user_id: int,
+        *,
+        status: str = "member",
+        source: str = "live",
+    ) -> None:
+        """
+        Record that a user belongs to a chat. The user and chat rows are
+        created on demand, so callers can pass raw ids.
+
+        Status changes coming from live membership events always win; a
+        plain sighting (source='message') never downgrades someone who is
+        already an admin, and never resurrects someone who left.
+        """
+        now = _now()
+        await self.conn.execute(
+            """
+            INSERT INTO chat_members (
+                chat_id, user_id, status, first_seen_at, joined_at,
+                left_at, last_seen_at, updated_at, source
+            ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
+            ON CONFLICT(chat_id, user_id) DO UPDATE SET
+                status = CASE
+                    WHEN excluded.source = 'message'
+                         AND chat_members.status NOT IN ('left', 'kicked')
+                        THEN chat_members.status
+                    ELSE excluded.status
+                END,
+                joined_at = CASE
+                    WHEN chat_members.status IN ('left', 'kicked')
+                         AND excluded.status NOT IN ('left', 'kicked')
+                        THEN excluded.updated_at
+                    ELSE COALESCE(chat_members.joined_at, excluded.joined_at)
+                END,
+                left_at = CASE
+                    WHEN excluded.status IN ('left', 'kicked')
+                        THEN excluded.updated_at
+                    ELSE NULL
+                END,
+                last_seen_at = excluded.last_seen_at,
+                updated_at = excluded.updated_at,
+                source = excluded.source
+            """,
+            (chat_id, user_id, status, now, now, now, now, source),
         )
 
     async def ensure_chat(self, chat_id: int, chat_type: str,
