@@ -71,7 +71,7 @@ from aiogram.types import MenuButtonWebApp, WebAppInfo
 async def setup_menu_button(bot: Bot):
     await bot.set_chat_menu_button(
         menu_button=MenuButtonWebApp(
-            text="🎮 بازی‌ها",
+            text="🎮 Games",
             web_app=WebAppInfo(url=GAMEMENU_URL)
         )
     )
