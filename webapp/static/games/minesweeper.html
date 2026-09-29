@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>مین‌یاب</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body {
+            font-family: Tahoma, sans-serif;
+            padding: 10px;
+            background: var(--tg-theme-bg-color, #fff);
+            color: var(--tg-theme-text-color, #000);
+            text-align: center;
+        }
+        #balance { font-size: 14px; color: #f5a623; margin-bottom: 8px; }
+        #info { font-size: 13px; opacity: 0.8; margin-bottom: 10px; }
+
+        .top-bar {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 8px 14px;
+            border-radius: 8px;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .btn-primary { background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); }
+        .btn-secondary { background: rgba(128,128,128,0.2); color: inherit; }
+        .btn-mode.active { outline: 3px solid #f5a623; }
+
+        #board-wrap {
+            overflow-x: auto;
+            max-width: 100%;
+            padding-bottom: 6px;
+        }
+        #board {
+            display: grid;
+            grid-template-columns: repeat(18, 20px);
+            grid-template-rows: repeat(10, 20px);
+            gap: 1px;
+            margin: 0 auto;
+            width: fit-content;
+        }
+        .cell {
+            width: 20px; height: 20px;
+            background: #8fbc8f;
+            border-radius: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .cell.revealed { background: #e0e0e0; color: #333; cursor: default; }
+        .cell.flagged { background: #f5c542; }
+        .cell.mine { background: #e53935; }
+        .n1 { color: #1976d2; } .n2 { color: #388e3c; } .n3 { color: #d32f2f; }
+        .n4 { color: #7b1fa2; } .n5 { color: #ff8f00; } .n6 { color: #0097a7; }
+        .n7 { color: #000; } .n8 { color: #616161; }
+
+        #result { margin-top: 14px; font-size: 16px; font-weight: bold; min-height: 24px; }
+        #error { margin-top: 6px; color: #e53935; font-size: 13px; min-height: 18px; }
+    </style>
+</head>
+<body>
+    <div id="balance">موجودی: در حال بارگذاری...</div>
+    <div id="info">ورودی: 25 سکه — جایزه‌ی برد کامل: 500 سکه</div>
+
+    <div class="top-bar" id="controls" style="display:none;">
+        <button class="btn-secondary btn-mode active" id="mode-reveal" onclick="setMode('reveal')">💣 باز کردن</button>
+        <button class="btn-secondary btn-mode" id="mode-flag" onclick="setMode('flag')">🚩 پرچم</button>
+    </div>
+
+    <div id="board-wrap">
+        <div id="board"></div>
+    </div>
+
+    <div class="top-bar" style="margin-top:14px;">
+        <button class="btn-primary" id="start-btn" onclick="startGame()">شروع بازی (25 سکه)</button>
+    </div>
+
+    <div id="result"></div>
+    <div id="error"></div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+        tg.BackButton.show();
+        tg.BackButton.onClick(() => { window.location.href = '/gamemenu'; });
+
+        const ROWS = 10, COLS = 18;
+        const userId = tg.initDataUnsafe.user?.id;
+        let mode = 'reveal';
+        let gameActive = false;
+
+        function setMode(m) {
+            mode = m;
+            document.getElementById('mode-reveal').classList.toggle('active', m === 'reveal');
+            document.getElementById('mode-flag').classList.toggle('active', m === 'flag');
+        }
+
+        function buildEmptyBoard() {
+            const board = document.getElementById('board');
+            board.innerHTML = '';
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const div = document.createElement('div');
+                    div.className = 'cell';
+                    div.id = `cell-${r}_${c}`;
+                    div.onclick = () => onCellClick(r, c);
+                    board.appendChild(div);
+                }
+            }
+        }
+
+        async function loadBalance() {
+            if (!userId) return;
+            const res = await fetch(`/api/user-info/${userId}`);
+            const data = await res.json();
+            if (!data.error) document.getElementById('balance').innerText = `موجودی: ${data.balance} سکه`;
+        }
+
+        function showError(msg) {
+            document.getElementById('error').innerText = msg;
+            setTimeout(() => { document.getElementById('error').innerText = ''; }, 2500);
+        }
+
+        async function callApi(payload) {
+            const res = await fetch('/api/games/minesweeper/play', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...payload, initData: tg.initData })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'خطا');
+            return data;
+        }
+
+        function renderRevealed(revealed) {
+            Object.entries(revealed).forEach(([key, num]) => {
+                const el = document.getElementById(`cell-${key}`);
+                if (!el) return;
+                el.classList.add('revealed');
+                el.classList.remove('flagged');
+                el.innerText = num > 0 ? num : '';
+                if (num > 0) el.classList.add(`n${num}`);
+            });
+        }
+
+        function renderFlags(flagged) {
+            document.querySelectorAll('.cell.flagged').forEach(el => {
+                if (!el.classList.contains('revealed')) {
+                    el.classList.remove('flagged');
+                    el.innerText = '';
+                }
+            });
+            flagged.forEach(({ row, col }) => {
+                const el = document.getElementById(`cell-${row}_${col}`);
+                if (el && !el.classList.contains('revealed')) {
+                    el.classList.add('flagged');
+                    el.innerText = '🚩';
+                }
+            });
+        }
+
+        function revealAllMines(mines) {
+            mines.forEach(({ row, col }) => {
+                const el = document.getElementById(`cell-${row}_${col}`);
+                if (el) {
+                    el.classList.add('mine');
+                    el.innerText = '💣';
+                }
+            });
+        }
+
+        async function onCellClick(r, c) {
+            if (!gameActive) return;
+            try {
+                let data;
+                if (mode === 'flag') {
+                    data = await callApi({ action: 'flag', row: r, col: c });
+                    renderFlags(data.flagged);
+                    renderRevealed(data.revealed);
+                } else {
+                    data = await callApi({ action: 'reveal', row: r, col: c });
+                    handleRevealResult(data);
+                }
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        function handleRevealResult(data) {
+            if (data.state === 'lost') {
+                revealAllMines(data.mines);
+                endGame('❌ روی مین رفتی! 25 سکه از دست دادی.', '#e53935');
+            } else if (data.state === 'won') {
+                renderRevealed(data.revealed);
+                endGame(`🎉 برد کامل! +${data.delta} سکه گرفتی.`, '#4caf50');
+            } else {
+                renderRevealed(data.revealed);
+                renderFlags(data.flagged);
+                document.getElementById('balance').innerText = `موجودی: ${data.balance} سکه`;
+            }
+        }
+
+        function endGame(msg, color) {
+            gameActive = false;
+            document.getElementById('result').innerText = msg;
+            document.getElementById('result').style.color = color;
+            document.getElementById('controls').style.display = 'none';
+            document.getElementById('start-btn').style.display = 'inline-block';
+            loadBalance();
+            tg.HapticFeedback.notificationOccurred(color === '#4caf50' ? 'success' : 'error');
+        }
+
+        async function startGame() {
+            document.getElementById('result').innerText = '';
+            try {
+                const data = await callApi({ action: 'start' });
+                buildEmptyBoard();
+                gameActive = true;
+                setMode('reveal');
+                document.getElementById('controls').style.display = 'flex';
+                document.getElementById('start-btn').style.display = 'none';
+                document.getElementById('balance').innerText = `موجودی: ${data.balance} سکه`;
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        buildEmptyBoard();
+        loadBalance();
+    </script>
+</body>
+</html>
