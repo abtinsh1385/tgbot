@@ -103,10 +103,11 @@ MIGRATIONS: list[str] = [
         net       INTEGER NOT NULL DEFAULT 0,     -- net coins won/lost
         PRIMARY KEY (user_id, game)
     );
-
-    -- v2: which users the bot has seen in which chat, and in what role.
-    -- Needed for per-chat features such as /mentionall. Existing databases
-    -- already carry this table; the IF NOT EXISTS keeps both cases safe.
+    """,
+    # v2 — which users the bot has seen in which chat, and in what role.
+    # Needed for per-chat features such as /mentionall. Existing databases
+    # already carry this table; the IF NOT EXISTS keeps both cases safe.
+    """
     CREATE TABLE IF NOT EXISTS chat_members (
         chat_id       INTEGER NOT NULL
                       REFERENCES chats(chat_id) ON DELETE CASCADE,
