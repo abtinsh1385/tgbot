@@ -1,0 +1,15 @@
+body {
+    background-image:
+        linear-gradient(rgba(10,20,15,0.55), rgba(10,20,15,0.7)),
+        url('/static/image/bg.jpg');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    font-family: Tahoma, sans-serif;
+    padding: 20px;
+    color: var(--tg-theme-text-color, #000);
+    text-align: center;
+
+
+}

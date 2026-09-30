@@ -3,8 +3,8 @@ from fastapi import HTTPException
 from .base import BaseGame
 from .sessions import set_session, get_session, clear_session
 
-ROWS = 10
-COLS = 18
+ROWS = 18
+COLS = 10
 MINES = 30
 BET_AMOUNT = 25
 WIN_REWARD = 500
