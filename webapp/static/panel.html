@@ -2,6 +2,7 @@
 <html lang="fa" dir="rtl">
 <head>
     <meta charset="UTF-8">
+    
     <title>پنل تنظیمات گروه</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
@@ -85,6 +86,46 @@
         </div>
     </div>
 
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">🔒 قفل کامل گفتگو</div>
+            <div class="setting-desc">کاربران معمولی دیگر نمیتوانند چیزی بفرستند</div>
+        </div>
+        <div class="switch off" id="lockSwitch" onclick="toggleLock()">
+            <div class="switch-knob"></div>
+        </div>
+    </div>
+
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">📎 منع رسانه</div>
+            <div class="setting-desc">کاربران معمولی نمیتوانند فایل بفرستند</div>
+        </div>
+        <div class="switch off" id="mediaSwitch" onclick="toggleMedia()">
+            <div class="switch-knob"></div>
+        </div>
+    </div>
+
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">🔁 منع فوروارد</div>
+            <div class="setting-desc">حذف خودکار پیام‌های فورواردی</div>
+        </div>
+        <div class="switch off" id="forwardSwitch" onclick="toggleForward()">
+            <div class="switch-knob"></div>
+        </div>
+    </div>
+
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">📣 منع منشن همه</div>
+            <div class="setting-desc">حذف پیام منشن</div>
+        </div>
+        <div class="switch off" id="mentionSwitch" onclick="toggleMention()">
+            <div class="switch-knob"></div>
+        </div>
+    </div>
+
     <script>
         const tg = window.Telegram.WebApp;
         tg.ready();
@@ -127,6 +168,10 @@
                 const res = await fetch(`/api/settings/${chatId}`);
                 const data = await res.json();
                 setSwitchState(document.getElementById('antiAdSwitch'), data.anti_ad);
+                setSwitchState(document.getElementById('lockSwitch'), data.chat_locked);
+                setSwitchState(document.getElementById('mediaSwitch'), data.block_media);
+                setSwitchState(document.getElementById('forwardSwitch'), data.block_forward);
+                setSwitchState(document.getElementById('mentionSwitch'), data.block_mentions);
             } catch (err) {
                 console.error(err);
             }
@@ -145,6 +190,90 @@
                 });
                 const data = await res.json();
                 setSwitchState(el, data.anti_ad);
+                tg.HapticFeedback.impactOccurred('light');
+            } catch (err) {
+                tg.showAlert('خطا در تغییر تنظیمات');
+            } finally {
+                el.classList.remove('loading');
+            }
+        }
+
+        async function toggleLock() {
+            const el = document.getElementById('lockSwitch');
+            el.classList.add('loading');
+
+            try {
+                const res = await fetch(`/api/settings/${chatId}/toggle_lock`, {
+                    method: 'POST',
+                    headers: {
+                     'X-Telegram-Init-Data': tg.initData
+        }
+                });
+                const data = await res.json();
+                setSwitchState(el, data.chat_locked);
+                tg.HapticFeedback.impactOccurred('light');
+            } catch (err) {
+                tg.showAlert('خطا در تغییر تنظیمات');
+            } finally {
+                el.classList.remove('loading');
+            }
+        }
+
+        async function toggleMedia() {
+            const el = document.getElementById('mediaSwitch');
+            el.classList.add('loading');
+
+            try {
+                const res = await fetch(`/api/settings/${chatId}/toggle_media`, {
+                    method: 'POST',
+                    headers: {
+                     'X-Telegram-Init-Data': tg.initData
+        }
+                });
+                const data = await res.json();
+                setSwitchState(el, data.block_media);
+                tg.HapticFeedback.impactOccurred('light');
+            } catch (err) {
+                tg.showAlert('خطا در تغییر تنظیمات');
+            } finally {
+                el.classList.remove('loading');
+            }
+        }
+
+        async function toggleForward() {
+            const el = document.getElementById('forwardSwitch');
+            el.classList.add('loading');
+
+            try {
+                const res = await fetch(`/api/settings/${chatId}/toggle_forward`, {
+                    method: 'POST',
+                    headers: {
+                     'X-Telegram-Init-Data': tg.initData
+        }
+                });
+                const data = await res.json();
+                setSwitchState(el, data.block_forward);
+                tg.HapticFeedback.impactOccurred('light');
+            } catch (err) {
+                tg.showAlert('خطا در تغییر تنظیمات');
+            } finally {
+                el.classList.remove('loading');
+            }
+        }
+
+        async function toggleMention() {
+            const el = document.getElementById('mentionSwitch');
+            el.classList.add('loading');
+
+            try {
+                const res = await fetch(`/api/settings/${chatId}/toggle_mention`, {
+                    method: 'POST',
+                    headers: {
+                     'X-Telegram-Init-Data': tg.initData
+        }
+                });
+                const data = await res.json();
+                setSwitchState(el, data.block_mentions);
                 tg.HapticFeedback.impactOccurred('light');
             } catch (err) {
                 tg.showAlert('خطا در تغییر تنظیمات');

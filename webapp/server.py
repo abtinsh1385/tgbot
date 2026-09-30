@@ -1,5 +1,7 @@
 import hashlib
 import hmac
+from permissions import for_chat
+from modules.mod import _exempt_admins
 from urllib.parse import parse_qsl
 from fastapi import FastAPI, Request, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -103,10 +105,28 @@ async def get_chat_photo(chat_id: int):
     file_bytes = await bot.download(chat.photo.big_file_id)
     return StreamingResponse(io.BytesIO(file_bytes.read()), media_type="image/jpeg")
 
+@app.get("/api/chat-users/{chat_id}")
+async def get_chat_users(chat_id: int):
+    users = await db.get_users_in_chat(chat_id)
+
+    return [
+        {
+            "user_id": user["user_id"],
+            "username": user["username"],
+            "first_name": user["first_name"],
+            "last_seen_at": user["last_seen_at"],
+        }
+        for user in users
+    ]
+
 @app.get("/api/settings/{chat_id}")
 async def get_settings_api(chat_id: int):
     anti_ad = await db.get_chat_setting(chat_id, "anti_ad", True)
-    return {"anti_ad": anti_ad}
+    chat_locked = await db.get_chat_setting(chat_id, "chat_locked", False)
+    block_media = await db.get_chat_setting(chat_id, "block_media", False)
+    block_forward = await db.get_chat_setting(chat_id, "block_forward", False)
+    block_mentions = await db.get_chat_setting(chat_id, "block_mentions", False)
+    return {"anti_ad": anti_ad, "chat_locked": chat_locked, "block_media": block_media, "block_forward": block_forward, "block_mentions":block_mentions}
 
 
 @app.post("/api/settings/{chat_id}/toggle_ad")
@@ -117,3 +137,100 @@ async def toggle_ad_api(chat_id: int, x_telegram_init_data: str = Header(...)):
     new_value = not current
     await db.set_chat_setting(chat_id, "anti_ad", new_value)
     return {"anti_ad": new_value}
+
+@app.post("/api/settings/{chat_id}/toggle_lock")
+async def toggle_lock_api(
+    chat_id: int,
+    x_telegram_init_data: str = Header(...)
+):
+    await verify_admin(chat_id, x_telegram_init_data)
+
+    current = await db.get_chat_setting(chat_id, "chat_locked", False)
+    new_value = not current
+
+    block_media = await db.get_chat_setting(
+        chat_id, "block_media", False
+    )
+
+    try:
+        await bot.set_chat_permissions(
+            chat_id=chat_id,
+            permissions=for_chat(new_value, block_media)
+        )
+
+        # اگر lock روشن شد، ادمین‌ها همچنان بتوانند پیام بدهند
+        if new_value:
+            await _exempt_admins(bot, chat_id)
+
+    except (TelegramForbiddenError, TelegramBadRequest) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"تغییر مجوزهای گروه ممکن نشد: {exc}"
+        )
+
+    await db.set_chat_setting(
+        chat_id,
+        "chat_locked",
+        new_value
+    )
+
+    if new_value:
+        await bot.send_message(
+            chat_id,
+            "🔒 گروه قفل است — فقط مدیران می‌توانند پیام بدهند."
+        )
+    else:
+        await bot.send_message(
+            chat_id,
+            "🔓 قفل گروه برداشته شد."
+        )
+
+    return {"chat_locked": new_value}
+
+@app.post("/api/settings/{chat_id}/toggle_media")
+async def toggle_media_api(chat_id: int, x_telegram_init_data: str = Header(...)):
+    await verify_admin(chat_id, x_telegram_init_data)
+
+    current = await db.get_chat_setting(chat_id, "block_media", True)
+    new_value = not current
+    await db.set_chat_setting(chat_id, "block_media", new_value)
+
+    if new_value:
+        await bot.send_message(
+            chat_id,
+            "📎 ارسال رسانه بسته است"
+        )
+    else:
+        await bot.send_message(
+            chat_id,
+            "منع رسانه برداشته شد."
+        )
+    return {"block_media": new_value}
+
+@app.post("/api/settings/{chat_id}/toggle_forward")
+async def toggle_forward_api(chat_id: int, x_telegram_init_data: str = Header(...)):
+    await verify_admin(chat_id, x_telegram_init_data)
+
+    current = await db.get_chat_setting(chat_id, "block_forward", True)
+    new_value = not current
+    await db.set_chat_setting(chat_id, "block_forward", new_value)
+    if new_value:
+        await bot.send_message(
+            chat_id,
+            "🔁 منع فوروارد"
+        )
+    else:
+        await bot.send_message(
+            chat_id,
+            "منع فوروارد برداشته شد."
+        )    
+    return {"block_forward": new_value}
+
+@app.post("/api/settings/{chat_id}/toggle_mention")
+async def toggle_ad_mention(chat_id: int, x_telegram_init_data: str = Header(...)):
+    await verify_admin(chat_id, x_telegram_init_data)
+
+    current = await db.get_chat_setting(chat_id, "block_mentions", True)
+    new_value = not current
+    await db.set_chat_setting(chat_id, "block_mentions", new_value)
+    return {"block_mentions": new_value}
