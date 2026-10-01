@@ -1,107 +1,864 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
+
 <head>
-    <link rel="stylesheet" href="/static/shared.css">
     <meta charset="UTF-8">
-    <title>منوی بازی‌ها</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="/static/shared.css">
+
+    <title>Game Center</title>
+
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
     <style>
-        * { box-sizing: border-box; }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --blue: #168cff;
+            --bright-blue: #4db8ff;
+            --deep-blue: #061344;
+
+            --text: #eef7ff;
+            --muted: #8fa8c7;
+
+            --panel: rgba(3, 10, 35, 0.82);
+            --panel-hover: rgba(6, 20, 60, 0.92);
+
+            --line: rgba(55, 153, 255, 0.35);
+        }
+
+
+        /* =========================
+           PAGE
+        ========================= */
+
+        html,
         body {
-            font-family: Tahoma, sans-serif;
-            padding: 20px;
-            /* background: var(--tg-theme-bg-color, #fff); */
-            color: var(--tg-theme-text-color, #000);
+            margin: 0;
+            min-height: 100%;
+        }
+
+        body {
+
+            font-family:
+                Tahoma,
+                Arial,
+                sans-serif;
+
+            color: var(--text);
+
+            min-height: 100vh;
+
+            padding: 18px 14px 100px;
+
+            -webkit-tap-highlight-color: transparent;
+        }
+
+
+        /* dark overlay */
+
+        /* body::before {
+
+            content: "";
+
+            position: fixed;
+
+            inset: 0;
+
+            z-index: -1;
+
+            background:
+                linear-gradient(
+                    to bottom,
+                    rgba(1, 4, 25, 0.25),
+                    rgba(1, 5, 35, 0.45)
+                );
+        } */
+
+
+        .container {
+
+            width: 100%;
+            max-width: 470px;
+
+            margin: auto;
+        }
+
+
+        /* =========================
+           TOP BAR
+        ========================= */
+
+        .top-bar {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 18px;
+        }
+
+        .brand {
             text-align: center;
         }
-        #user-photo {
-            width: 80px;
-            height: 80px;
+
+
+
+        .brand-small {
+
+            color: var(--bright-blue);
+
+            font-size: 9px;
+
+            letter-spacing: 3px;
+
+            margin-bottom: 3px;
+
+            text-transform: uppercase;
+        }
+
+
+        .brand-title {
+
+            font-size: 24px;
+
+            font-weight: 900;
+
+            letter-spacing: -1px;
+
+            align-items: center;
+
+            text-shadow:
+                0 0 12px rgba(40, 155, 255, 0.55);
+        }
+
+
+        .online {
+
+            display: flex;
+
+            align-items: center;
+
+            gap: 6px;
+
+            color: #8dc9ff;
+
+            font-size: 9px;
+        }
+
+
+        .online-dot {
+
+            width: 6px;
+            height: 6px;
+
             border-radius: 50%;
+
+            background: #4db8ff;
+
+            box-shadow:
+                0 0 8px #168cff;
+        }
+
+
+        /* =========================
+           PROFILE
+        ========================= */
+
+        .profile {
+
+            position: relative;
+
+            display: flex;
+
+            align-items: center;
+
+            padding: 12px 14px;
+
+            background: var(--panel);
+
+            border: 1px solid var(--line);
+
+            border-radius: 10px;
+
+            box-shadow:
+                0 8px 30px rgba(0, 0, 0, 0.35);
+
+            overflow: hidden;
+        }
+
+
+        /* little arcade line */
+
+        .profile::after {
+
+            content: "";
+
+            position: absolute;
+
+            left: 0;
+            right: 0;
+            bottom: 0;
+
+            height: 2px;
+
+            background:
+                linear-gradient(
+                    90deg,
+                    transparent,
+                    var(--blue),
+                    transparent
+                );
+
+            opacity: 0.7;
+        }
+
+
+        #user-photo {
+
+            width: 58px;
+            height: 58px;
+
+            flex-shrink: 0;
+
+            border-radius: 8px;
+
             object-fit: cover;
-            background: #ddd;
+
+            background: #08133b;
+
+            border: 1px solid
+                rgba(77, 184, 255, 0.55);
+
+            box-shadow:
+                0 0 14px
+                rgba(22, 140, 255, 0.2);
         }
+
+
+        .profile-info {
+
+            flex: 1;
+
+            min-width: 0;
+
+            margin-right: 13px;
+
+            text-align: right;
+        }
+
+
         #user-name {
-            font-size: 18px;
+
+            font-size: 16px;
+
             font-weight: bold;
-            margin-top: 10px;
+
+            white-space: nowrap;
+
+            overflow: hidden;
+
+            text-overflow: ellipsis;
         }
-        #user-balance {
-            font-size: 15px;
-            color: #f5a623;
-            margin-top: 4px;
+
+
+        .user-label {
+
+            margin-top: 3px;
+
+            color: var(--muted);
+
+            font-size: 9px;
         }
+
+
+        .balance {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 7px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, rgba(22,140,255,0.18), rgba(6,20,60,0.6));
+            border: 1px solid rgba(77,184,255,0.5);
+            color: #fff066;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.3px;
+            box-shadow:
+                0 0 12px rgba(22,140,255,0.25),
+                inset 0 1px 0 rgba(255,255,255,0.08);
+        }
+        .balance .coin-icon {
+            font-size: 13px;
+            filter: drop-shadow(0 0 4px rgba(255,214,0,0.7));
+        }
+
+
+        /* =========================
+           GAME SECTION
+        ========================= */
+
+        .section {
+
+            margin-top: 27px;
+        }
+
+
+        .section-header {
+
+            display: flex;
+
+            align-items: center;
+
+            gap: 10px;
+
+            margin-bottom: 10px;
+        }
+
+
+        .section-line {
+
+            flex: 1;
+
+            height: 1px;
+
+            background:
+                linear-gradient(
+                    to left,
+                    rgba(38, 143, 255, 0.45),
+                    transparent
+                );
+        }
+
+
+        .section-title {
+
+            color: #dcefff;
+
+            font-size: 13px;
+
+            font-weight: bold;
+        }
+
+
+        .section-number {
+
+            color: var(--blue);
+
+            font-family: monospace;
+
+            font-size: 10px;
+        }
+
+
+        /* =========================
+           GAME LIST
+        ========================= */
+
         .game-list {
-            margin-top: 24px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .game-card {
+            position: relative;
             display: flex;
             flex-direction: column;
-            gap: 10px;
-        }
-        .game-btn {
-            padding: 14px;
-            border-radius: 10px;
-            background: var(--tg-theme-button-color, #2481cc);
-            color: var(--tg-theme-button-text-color, #fff);
-            border: none;
-            font-size: 15px;
+            padding: 0;
+            overflow: hidden;
+            border-radius: 16px;
+            background: var(--panel);
+            border: 1px solid var(--line);
             cursor: pointer;
+            text-align: right;
+            transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.35);
         }
+
+        .game-card:active {
+            transform: scale(0.96);
+        }
+
+        .game-card:hover,
+        .game-card:focus-visible {
+            border-color: rgba(77,184,255,0.75);
+            box-shadow:
+                0 10px 26px rgba(0,0,0,0.4),
+                0 0 18px rgba(22,140,255,0.25);
+        }
+
+        .game-image-wrap {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1 / 0.82;
+            overflow: hidden;
+        }
+
+        .game-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            transition: transform 0.25s ease;
+        }
+
+        .game-card:hover .game-image {
+            transform: scale(1.06);
+        }
+
+        /* سایه‌ی تیره از پایین تصویر تا متن راحت خونده بشه */
+        .game-image-wrap::after {
+            content: "";
+            position: absolute;
+            left: 0; right: 0; bottom: 0;
+            height: 55%;
+            background: linear-gradient(to top, rgba(2,8,28,0.95), transparent);
+            pointer-events: none;
+        }
+
+        /* خط نئونی باریک زیر تصویر، بین عکس و متن */
+        .game-image-wrap::before {
+            content: "";
+            position: absolute;
+            left: 0; right: 0; bottom: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--bright-blue), transparent);
+            opacity: 0.8;
+            z-index: 2;
+        }
+
+        .game-info {
+            padding: 10px 12px 12px;
+            align-items: center;
+            background: var(--panel);
+        }
+
+        .game-name {
+            font-size: 14px;
+            font-weight: 800;
+            color: #f1f8ff;
+            text-align: center;
+            margin-bottom: 4px;
+        }
+
+        .game-description {
+            color: var(--muted);
+            font-size: 10.5px;
+            line-height: 1.5;
+            text-align: center;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        /* یک برچسب کوچیک بالای تایل، مثلاً برای نمایش ورودی بازی */
+        .game-badge {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            z-index: 3;
+            padding: 3px 8px;
+            border-radius: 20px;
+            background: rgba(3,10,35,0.85);
+            border: 1px solid rgba(77,184,255,0.45);
+            color: #8dc9ff;
+            font-size: 9px;
+            font-weight: 700;
+            backdrop-filter: blur(4px);
+        }
+        /* =========================
+           FOOTER
+        ========================= */
+
+        .footer {
+
+            margin-top: 18px;
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            gap: 7px;
+
+            color: #53779e;
+
+            font-family: monospace;
+
+            font-size: 8px;
+
+            letter-spacing: 1px;
+        }
+
+
+        .footer-line {
+
+            width: 30px;
+
+            height: 1px;
+
+            background: #1d5181;
+        }
+
+
+        /* =========================
+           LOADING
+        ========================= */
+
+        .loading {
+
+            animation:
+                loadingPulse 1.1s infinite;
+        }
+
+
+        @keyframes loadingPulse {
+
+            0%, 100% {
+                opacity: 0.35;
+            }
+
+            50% {
+                opacity: 1;
+            }
+        }
+
+
+        /* =========================
+           MOBILE
+        ========================= */
+
+        @media (max-width: 380px) {
+
+            body {
+                padding:
+                    15px
+                    11px
+                    80px;
+            }
+
+            .brand-title {
+                font-size: 21px;
+            }
+
+            #user-photo {
+                width: 52px;
+                height: 52px;
+            }
+
+            .game-card {
+                min-height: 68px;
+            }
+
+            .game-icon {
+                width: 46px;
+                height: 46px;
+            }
+        }
+
     </style>
 </head>
-<body>
-    <img id="user-photo" src="" alt="عکس کاربر">
-    <div id="user-name">در حال بارگذاری...</div>
-    <div id="user-balance"></div>
 
-    <div class="game-list">
-        <!-- <button class="game-btn" onclick="openGame('guess')">🎲 حدس عدد</button> -->
-        <button class="game-btn" onclick="openGame('coinflip')">🪙 شیر یا خط</button>
-        <button class="game-btn" onclick="openGame('blackjack')">بلک جک 🎴</button>
-        <button class="game-btn" onclick="openGame('minesweeper')">مین‌یاب 💣</button>
+
+<body>
+
+<div class="container">
+
+
+    <!-- =========================
+         HEADER
+    ========================= -->
+
+    <div class="top-bar">
+
+        <div class="brand">
+
+
+            <div class="brand-title">
+                R.O.B
+            </div>
+
+        </div>
+
+
+
     </div>
 
-    <script>
-        const tg = window.Telegram.WebApp;
-        tg.ready();
-        tg.expand();
 
-        const userId = tg.initDataUnsafe.user?.id;
+    <!-- =========================
+         PROFILE
+    ========================= -->
 
-        async function loadUserInfo() {
-            if (!userId) {
-                document.getElementById('user-name').innerText = "خطا: کاربر شناسایی نشد";
+    <div class="profile">
+
+        <img
+            id="user-photo"
+            src=""
+            alt="عکس کاربر"
+        >
+
+
+        <div class="profile-info">
+
+            <div
+                id="user-name"
+                class="loading"
+            >
+                در حال بارگذاری...
+            </div>
+
+
+            <div class="user-label">
+                PLAYER PROFILE
+            </div>
+
+
+            <div id="user-balance" class="balance">
+                <span class="coin-icon">💰</span>
+                <span id="balance-amount">در حال دریافت...</span>
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- =========================
+         GAMES
+    ========================= -->
+
+    <div class="section">
+
+        <div class="section-header">
+
+            <span class="section-title">
+                انتخاب بازی
+            </span>
+
+            <div class="section-line"></div>
+
+        </div>
+
+
+        <div class="game-list">
+
+
+            <!-- COIN FLIP -->
+
+            <button
+                class="game-card"
+                onclick="openGame('coinflip')"
+            >
+                <img
+                    class="game-image"
+                    src="/static/image/coinflip.webp"
+                    alt="شیر یا خط"
+                >
+
+                <div class="game-info">
+                    <div class="game-name">
+                        شیر یا خط
+                    </div>
+
+                    <div class="game-description">
+                        شانست رو امتحان کن و سکه برنده شو
+                    </div>
+                </div>
+            </button>
+
+
+            <!-- BLACKJACK -->
+
+            <button
+                class="game-card"
+                onclick="openGame('blackjack')"
+            >
+                <img
+                    class="game-image"
+                    src="/static/image/blackjack.webp"
+                    alt="بلک جک"
+                >
+
+                <div class="game-info">
+                    <div class="game-name">
+                        بلک جک
+                    </div>
+
+                    <div class="game-description">
+                        با کارت‌ها بازی کن و به ۲۱ نزدیک شو
+                    </div>
+                </div>
+            </button>
+
+
+            <!-- MINESWEEPER -->
+
+            <button
+                class="game-card"
+                onclick="openGame('minesweeper')"
+            >
+                <img
+                    class="game-image"
+                    src="/static/image/minesweeper.webp"
+                    alt="مین‌یاب"
+                >
+
+                <div class="game-info">
+                    <div class="game-name">
+                        مین‌یاب
+                    </div>
+
+                    <div class="game-description">
+                        مین‌ها رو پیدا کن و رکورد بزن
+                    </div>
+                </div>
+            </button>
+
+
+            <!-- WHACK A MOLE -->
+
+            <button
+                class="game-card"
+                onclick="openGame('whackamole')"
+            >
+                <img
+                    class="game-image"
+                    src="/static/image/whackamole.webp"
+                    alt="بزن بزن"
+                >
+
+                <div class="game-info">
+                    <div class="game-name">
+                        بزن بزن
+                    </div>
+
+                    <div class="game-description">
+                        سریع باش و بیشترین امتیاز رو بگیر
+                    </div>
+                </div>
+            </button>
+
+
+        </div>
+
+    </div>
+
+
+</div>
+
+
+<script>
+
+    const tg = window.Telegram.WebApp;
+
+    tg.ready();
+    tg.expand();
+
+    const userId =
+        tg.initDataUnsafe.user?.id;
+
+
+    // =========================
+    // USER INFO
+    // =========================
+
+    async function loadUserInfo() {
+
+        const nameElement = document.getElementById("user-name");
+        const balanceElement = document.getElementById("user-balance");
+
+        if (!userId) {
+            nameElement.classList.remove("loading");
+            nameElement.innerText = "خطا: کاربر شناسایی نشد";
+            balanceElement.innerText = "";
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/user-info/${userId}`);
+            const data = await res.json();
+
+            if (data.error) {
+                nameElement.classList.remove("loading");
+                nameElement.innerText = "خطا: " + data.error;
+                balanceElement.innerText = "";
                 return;
             }
 
-            try {
-                const res = await fetch(`/api/user-info/${userId}`);
-                const data = await res.json();
+            nameElement.classList.remove("loading");
+            nameElement.innerText = data.name;
 
-                if (data.error) {
-                    document.getElementById('user-name').innerText = "خطا: " + data.error;
-                    return;
-                }
+            // چون الان ساختار HTML شامل span های جدا (coin-icon + balance-amount) است،
+            // باید فقط مقدار متن balance-amount رو عوض کنی، نه کل innerText کانتینر
+            document.getElementById('balance-amount').innerText = `${data.balance} سکه`;
 
-                document.getElementById('user-name').innerText = data.name;
-                document.getElementById('user-balance').innerText = `💰 ${data.balance} سکه`;
-            } catch (err) {
-                document.getElementById('user-name').innerText = "خطا در دریافت اطلاعات";
-            }
+        } catch (err) {
+            nameElement.classList.remove("loading");
+            nameElement.innerText = "خطا در دریافت اطلاعات";
+            document.getElementById('balance-amount').innerText = "";
+        }
+    }
+
+    // =========================
+    // USER PHOTO
+    // =========================
+
+    function loadUserPhoto() {
+
+        if (!userId)
+            return;
+
+
+        const img =
+            document.getElementById(
+                "user-photo"
+            );
+
+
+        img.src =
+            `/api/user-photo/${userId}`;
+
+
+        img.onerror = () => {
+
+            img.style.display =
+                "none";
+        };
+    }
+
+
+    // =========================
+    // OPEN GAME
+    // =========================
+
+    function openGame(slug) {
+
+        if (tg.HapticFeedback) {
+
+            tg.HapticFeedback
+                .impactOccurred("light");
         }
 
-        async function loadUserPhoto() {
-            if (!userId) return;
-            const img = document.getElementById('user-photo');
-            img.src = `/api/user-photo/${userId}`;
-            img.onerror = () => { img.style.display = 'none'; };
-        }
 
-        function openGame(slug) {
-            window.location.href = `/games/${slug}`;
-        }
+        window.location.href =
+            `/games/${slug}`;
+    }
 
-        loadUserInfo();
-        loadUserPhoto();
-    </script>
+
+    // =========================
+    // INIT
+    // =========================
+    loadUserInfo();
+    loadUserPhoto();
+
+</script>
+
 </body>
 </html>

@@ -25,9 +25,10 @@ db = Database()
 dp.message.middleware(members.record_message_sender)
 dp.include_router(members.router)
 dp.include_router(panel.router)
-dp.include_router(mod.router)
 dp.include_router(economy.router)
 dp.include_router(minigames.router)
+dp.include_router(mod.router)
+
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, command: CommandObject):
