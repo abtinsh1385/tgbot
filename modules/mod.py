@@ -765,15 +765,16 @@ async def deletion_switch_watcher(message: Message, db: Database) -> None:
     ):
         reason = "ارسال پیام فورواردشده در این گروه مجاز نیست"
     elif block_mentions:
-        text = message.text or message.caption or ""
-        if "@everyone" in text or "@admin" in text:
-            reason = "منشن همه یا ادمین‌ها در این گروه مجاز نیست"
+        entities = (message.entities or []) + (message.caption_entities or [])
+        has_mention = any(e.type in ("mention", "text_mention") for e in entities)
+        if has_mention:
+            reason = "منشن کردن در این گروه مجاز نیست"
     if reason is None:
         return
 
-    member = await message.chat.get_member(message.from_user.id)
-    if member.status in ("administrator", "creator"):
-        return
+    # member = await message.chat.get_member(message.from_user.id)
+    # if member.status in ("administrator", "creator"):
+    #     return
 
     try:
         await message.delete()

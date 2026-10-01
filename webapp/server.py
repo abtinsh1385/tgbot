@@ -233,4 +233,14 @@ async def toggle_ad_mention(chat_id: int, x_telegram_init_data: str = Header(...
     current = await db.get_chat_setting(chat_id, "block_mentions", True)
     new_value = not current
     await db.set_chat_setting(chat_id, "block_mentions", new_value)
+    if new_value:
+        await bot.send_message(
+            chat_id,
+            "📣 منع منشن"
+        )
+    else:
+        await bot.send_message(
+            chat_id,
+            "منع منشن برداشته شد."
+        )
     return {"block_mentions": new_value}
