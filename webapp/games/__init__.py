@@ -1,11 +1,13 @@
 from .coinflip import CoinflipGame
 from .blackjack import BlackjackGame
 from .minesweeper import MinesweeperGame
+from .whackamole import WhackAMoleGame
 
 GAME_CLASSES = [
     CoinflipGame,
     BlackjackGame,
-    MinesweeperGame
+    MinesweeperGame,
+    WhackAMoleGame
 ]
 
 

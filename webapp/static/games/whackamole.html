@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>بزن بزن</title>
+    <link rel="stylesheet" href="/static/shared.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body { font-family: -apple-system, Tahoma, sans-serif; padding: 16px 12px 28px; text-align: center; min-height: 100vh; }
+
+        .status-card {
+            display: flex; justify-content: space-between; align-items: center;
+            background: var(--tg-theme-secondary-bg-color, #fff);
+            border-radius: 14px; padding: 12px 16px; margin-bottom: 14px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+        }
+        .status-item { text-align: center; flex: 1; }
+        .status-label { font-size: 11px; opacity: 0.55; margin-bottom: 2px; }
+        .status-value { font-size: 16px; font-weight: 700; }
+        .status-value.coin { color: #f5a623; }
+        .status-value.hit { color: #4caf50; }
+        .status-value.miss { color: #e53935; }
+
+        .timer-bar-wrap {
+            height: 8px; background: rgba(128,128,128,0.2); border-radius: 4px;
+            overflow: hidden; margin-bottom: 14px;
+        }
+        .timer-bar {
+            height: 100%; background: linear-gradient(90deg, #4caf50, #f5a623, #e53935);
+            width: 100%; transition: width 0.15s linear;
+        }
+
+        #field-wrap { position: relative; margin-bottom: 16px; }
+        .field {
+            background: linear-gradient(160deg, #6b4423, #52341a);
+            border-radius: 14px; padding: 14px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.18), inset 0 0 0 3px rgba(255,255,255,0.1);
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+            transition: filter 0.2s;
+        }
+        .field.dimmed { filter: brightness(0.35) blur(1px); }
+
+        .hole {
+            aspect-ratio: 1; border-radius: 50%;
+            background: radial-gradient(circle at 50% 40%, #3a2412, #1a0f06 75%);
+            box-shadow: inset 0 6px 14px rgba(0,0,0,0.6);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 34px; cursor: pointer; overflow: hidden;
+        }
+        .hole .mole {
+            transform: scale(0);
+            transition: transform 0.12s cubic-bezier(0.34, 1.6, 0.6, 1);
+        }
+        .hole.active .mole { transform: scale(1); }
+        .hole.bonked { animation: bonk 0.2s ease-out; }
+        @keyframes bonk {
+            0% { transform: scale(1); }
+            50% { transform: scale(0.85); }
+            100% { transform: scale(1); }
+        }
+
+        .board-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 10px; border-radius: 14px; z-index: 10;
+            opacity: 0; pointer-events: none; transition: opacity 0.25s; padding: 20px;
+        }
+        .board-overlay.show { opacity: 1; pointer-events: auto; }
+        .board-overlay .overlay-icon { font-size: 40px; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.3)); }
+        .board-overlay .overlay-title { font-size: 18px; font-weight: 800; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.4); }
+        .board-overlay .overlay-sub { font-size: 13px; color: rgba(255,255,255,0.85); }
+        .board-overlay button {
+            margin-top: 6px; padding: 12px 28px; border-radius: 14px; border: none;
+            background: linear-gradient(135deg, #2481cc, #1a63a0);
+            color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+            box-shadow: 0 6px 16px rgba(36,129,204,0.45);
+        }
+
+        #error { margin-top: 10px; color: #e53935; font-size: 13px; min-height: 18px; }
+    </style>
+</head>
+<body>
+    <div class="status-card">
+        <div class="status-item">
+            <div class="status-label">موجودی</div>
+            <div class="status-value coin" id="balance-val">—</div>
+        </div>
+        <div class="status-item">
+            <div class="status-label">✅ درست</div>
+            <div class="status-value hit" id="hits-val">0</div>
+        </div>
+        <div class="status-item">
+            <div class="status-label">❌ اشتباه</div>
+            <div class="status-value miss" id="misses-val">0</div>
+        </div>
+    </div>
+
+    <div class="timer-bar-wrap"><div class="timer-bar" id="timer-bar"></div></div>
+
+    <div id="field-wrap">
+        <div class="field" id="field"></div>
+
+        <div class="board-overlay show" id="overlay-start" style="background: rgba(20,15,10,0.6);">
+            <div class="overlay-icon">🔨</div>
+            <div class="overlay-title">آماده‌ای؟</div>
+            <div class="overlay-sub">ورودی ۲۵ سکه — هر ضربه‌ی درست +۵، هر اشتباه -۲</div>
+            <button onclick="startGame()">شروع بازی</button>
+        </div>
+
+        <div class="board-overlay" id="overlay-result">
+            <div class="overlay-icon" id="result-icon"></div>
+            <div class="overlay-title" id="result-title"></div>
+            <div class="overlay-sub" id="result-sub"></div>
+            <button onclick="startGame()">دوباره بازی کن</button>
+        </div>
+    </div>
+
+    <div id="error"></div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+        tg.BackButton.show();
+        tg.BackButton.onClick(() => { window.location.href = '/gamemenu'; });
+
+        const HOLES = 9;
+        const DURATION = 30;
+        const userId = tg.initDataUnsafe.user?.id;
+
+        const fieldEl = document.getElementById('field');
+        const overlayStart = document.getElementById('overlay-start');
+        const overlayResult = document.getElementById('overlay-result');
+        const timerBar = document.getElementById('timer-bar');
+
+        let pollTimer = null;
+        let gameActive = false;
+
+        function buildField() {
+            fieldEl.innerHTML = '';
+            for (let i = 0; i < HOLES; i++) {
+                const hole = document.createElement('div');
+                hole.className = 'hole';
+                hole.id = `hole-${i}`;
+                hole.innerHTML = '<span class="mole">🐹</span>';
+                hole.onclick = () => onHoleClick(i);
+                fieldEl.appendChild(hole);
+            }
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('error');
+            el.innerText = msg;
+            setTimeout(() => { el.innerText = ''; }, 2000);
+        }
+
+        async function callApi(payload) {
+            const res = await fetch('/api/games/whackamole/play', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...payload, initData: tg.initData })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'خطا');
+            return data;
+        }
+
+        async function loadBalance() {
+            const res = await fetch(`/api/user-info/${userId}`);
+            const data = await res.json();
+            if (!data.error) document.getElementById('balance-val').innerText = data.balance;
+        }
+
+        async function startGame() {
+            overlayResult.classList.remove('show');
+            overlayStart.classList.remove('show');
+            document.getElementById('field').classList.remove('dimmed');
+            document.getElementById('error').innerText = '';
+
+            try {
+                const data = await callApi({ action: 'start' });
+                buildField();
+                document.getElementById('balance-val').innerText = data.balance;
+                document.getElementById('hits-val').innerText = '0';
+                document.getElementById('misses-val').innerText = '0';
+                gameActive = true;
+                pollTimer = setInterval(pollState, 150);
+            } catch (err) {
+                overlayStart.classList.add('show');
+                showError(err.message);
+            }
+        }
+
+        function clearHoles() {
+            document.querySelectorAll('.hole.active').forEach(el => el.classList.remove('active'));
+        }
+
+        async function pollState() {
+            if (!gameActive) return;
+            try {
+                const data = await callApi({ action: 'state' });
+
+                if (data.state === 'finished') {
+                    clearInterval(pollTimer);
+                    await finishGame();
+                    return;
+                }
+
+                timerBar.style.width = `${100 - (data.elapsed / DURATION) * 100}%`;
+
+                const activeHoles = new Set(data.active.map(a => a.hole));
+                for (let i = 0; i < HOLES; i++) {
+                    const el = document.getElementById(`hole-${i}`);
+                    el.classList.toggle('active', activeHoles.has(i));
+                }
+
+                document.getElementById('hits-val').innerText = data.hits;
+                document.getElementById('misses-val').innerText = data.misses;
+            } catch (err) {
+                clearInterval(pollTimer);
+                gameActive = false;
+            }
+        }
+
+        async function onHoleClick(hole) {
+            if (!gameActive) return;
+            const el = document.getElementById(`hole-${hole}`);
+            el.classList.add('bonked');
+            setTimeout(() => el.classList.remove('bonked'), 200);
+
+            try {
+                const data = await callApi({ action: 'hit', hole });
+                if (data.result === 'hit') {
+                    el.classList.remove('active');
+                    tg.HapticFeedback.impactOccurred('medium');
+                } else {
+                    tg.HapticFeedback.impactOccurred('light');
+                }
+                document.getElementById('hits-val').innerText = data.hits;
+                document.getElementById('misses-val').innerText = data.misses;
+                document.getElementById('balance-val').innerText = data.balance;
+            } catch (err) {
+                // اگه بازی تازه تموم شده بود، نادیده بگیر
+            }
+        }
+
+        async function finishGame() {
+            gameActive = false;
+            clearHoles();
+            try {
+                const data = await callApi({ action: 'finish' });
+                const net = data.hits * 5 - data.misses * 2 - 25;
+
+                document.getElementById('result-icon').innerText = net >= 0 ? '🎉' : '💥';
+                document.getElementById('result-title').innerText = net >= 0 ? 'بردی!' : 'باختی!';
+                document.getElementById('result-sub').innerText =
+                    `${data.hits} ضربه‌ی درست، ${data.misses} اشتباه — خالص: ${net >= 0 ? '+' : ''}${net} سکه`;
+
+                overlayResult.style.background = net >= 0 ? 'rgba(20,80,40,0.65)' : 'rgba(80,20,20,0.65)';
+                document.getElementById('field').classList.add('dimmed');
+                overlayResult.classList.add('show');
+
+                document.getElementById('balance-val').innerText = data.balance;
+                tg.HapticFeedback.notificationOccurred(net >= 0 ? 'success' : 'error');
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        buildField();
+        loadBalance();
+    </script>
+</body>
+</html>
