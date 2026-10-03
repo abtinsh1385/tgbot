@@ -1,0 +1,808 @@
+# database.py — async PostgreSQL layer for the Abtin Telegram bot.
+#
+# Railway setup:
+#   1. Add a PostgreSQL service to the Railway project.
+#   2. Add DATABASE_URL to BOTH the Bot and Web App services.
+#   3. Install asyncpg (see requirements.txt).
+#
+# The Database API is intentionally kept close to the old SQLite version so
+# the bot/webapp code can continue using Database(), ensure_user(), etc.
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import time
+from typing import Any, Optional
+
+import asyncpg
+
+log = logging.getLogger(__name__)
+
+
+def _now() -> int:
+    """Unix timestamp as int — used for all time columns."""
+    return int(time.time())
+
+
+class InsufficientFunds(Exception):
+    """A debit/transfer would push a wallet below zero."""
+
+
+class UnknownUser(Exception):
+    """The target user has no wallet (transfers require a known recipient)."""
+
+
+# ---------------------------------------------------------------------------
+# PostgreSQL schema migrations
+# ---------------------------------------------------------------------------
+
+MIGRATIONS: list[str] = [
+    # v1 — core schema: users, chats, global economy, minigame stats
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        user_id     BIGINT PRIMARY KEY,
+        username    TEXT,
+        first_name  TEXT,
+        created_at  BIGINT NOT NULL,
+        updated_at  BIGINT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS chats (
+        chat_id     BIGINT PRIMARY KEY,
+        chat_type   TEXT NOT NULL,
+        title       TEXT,
+        created_at  BIGINT NOT NULL,
+        updated_at  BIGINT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_settings (
+        chat_id     BIGINT PRIMARY KEY
+                    REFERENCES chats(chat_id) ON DELETE CASCADE,
+        settings    TEXT NOT NULL DEFAULT '{}'
+    );
+
+    CREATE TABLE IF NOT EXISTS wallets (
+        user_id     BIGINT PRIMARY KEY
+                    REFERENCES users(user_id) ON DELETE CASCADE,
+        balance     BIGINT NOT NULL DEFAULT 0 CHECK (balance >= 0),
+        updated_at  BIGINT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS transactions (
+        id            BIGSERIAL PRIMARY KEY,
+        user_id       BIGINT NOT NULL
+                      REFERENCES users(user_id) ON DELETE CASCADE,
+        amount        BIGINT NOT NULL,
+        reason        TEXT NOT NULL,
+        balance_after BIGINT NOT NULL,
+        created_at    BIGINT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tx_user_time
+        ON transactions (user_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS minigame_stats (
+        user_id   BIGINT NOT NULL
+                  REFERENCES users(user_id) ON DELETE CASCADE,
+        game      TEXT NOT NULL,
+        plays     BIGINT NOT NULL DEFAULT 0,
+        wins      BIGINT NOT NULL DEFAULT 0,
+        losses    BIGINT NOT NULL DEFAULT 0,
+        net       BIGINT NOT NULL DEFAULT 0,
+        PRIMARY KEY (user_id, game)
+    );
+    """,
+
+    # v2 — users seen in each chat, including their role/status.
+    """
+    CREATE TABLE IF NOT EXISTS chat_members (
+        chat_id       BIGINT NOT NULL
+                      REFERENCES chats(chat_id) ON DELETE CASCADE,
+        user_id       BIGINT NOT NULL
+                      REFERENCES users(user_id) ON DELETE CASCADE,
+        status        TEXT NOT NULL DEFAULT 'member',
+        first_seen_at BIGINT NOT NULL,
+        joined_at     BIGINT,
+        left_at       BIGINT,
+        last_seen_at  BIGINT NOT NULL,
+        updated_at    BIGINT NOT NULL,
+        source        TEXT NOT NULL DEFAULT 'live',
+        PRIMARY KEY (chat_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chat_members_user
+        ON chat_members (user_id, status);
+
+    CREATE INDEX IF NOT EXISTS idx_chat_members_chat_status
+        ON chat_members (chat_id, status);
+    """,
+]
+
+
+# ---------------------------------------------------------------------------
+# Database class
+# ---------------------------------------------------------------------------
+
+class Database:
+    def __init__(self, dsn: Optional[str] = None) -> None:
+        self._dsn = dsn or os.getenv("DATABASE_URL")
+        self._conn: Optional[asyncpg.Connection] = None
+
+        if not self._dsn:
+            raise RuntimeError(
+                "DATABASE_URL is not set. Add PostgreSQL's DATABASE_URL "
+                "to the Railway service environment variables."
+            )
+
+    # -- lifecycle ---------------------------------------------------------
+
+    async def connect(self) -> None:
+        if self._conn is not None:
+            return
+
+        self._conn = await asyncpg.connect(self._dsn)
+        await self._migrate()
+        log.info("PostgreSQL database ready")
+
+    async def close(self) -> None:
+        if self._conn is not None:
+            await self._conn.close()
+            self._conn = None
+            log.info("PostgreSQL database closed")
+
+    @property
+    def conn(self) -> asyncpg.Connection:
+        if self._conn is None:
+            raise RuntimeError("Database is not connected — call connect() first")
+        return self._conn
+
+    async def _migrate(self) -> None:
+        await self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at BIGINT NOT NULL
+            )
+            """
+        )
+
+        row = await self.conn.fetchrow(
+            "SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations"
+        )
+        version = int(row["version"])
+
+        for i, script in enumerate(MIGRATIONS, start=1):
+            if i <= version:
+                continue
+
+            async with self.conn.transaction():
+                await self.conn.execute(script)
+                await self.conn.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES ($1, $2)",
+                    i,
+                    _now(),
+                )
+
+            log.info("Applied database migration v%d", i)
+
+    # -- generic helpers ---------------------------------------------------
+
+    async def fetchone(
+        self, sql: str, params: tuple = ()
+    ) -> Optional[asyncpg.Record]:
+        return await self.conn.fetchrow(sql, *params)
+
+    async def fetchall(
+        self, sql: str, params: tuple = ()
+    ) -> list[asyncpg.Record]:
+        return await self.conn.fetch(sql, *params)
+
+    # -- users & chats -----------------------------------------------------
+
+    async def ensure_user(
+        self,
+        user_id: int,
+        username: Optional[str],
+        first_name: Optional[str],
+    ) -> asyncpg.Record:
+        now = _now()
+
+        return await self.conn.fetchrow(
+            """
+            INSERT INTO users (
+                user_id, username, first_name, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $4)
+            ON CONFLICT(user_id) DO UPDATE SET
+                username   = COALESCE(EXCLUDED.username, users.username),
+                first_name = COALESCE(EXCLUDED.first_name, users.first_name),
+                updated_at = EXCLUDED.updated_at
+            WHERE users.username IS DISTINCT FROM
+                      COALESCE(EXCLUDED.username, users.username)
+               OR users.first_name IS DISTINCT FROM
+                      COALESCE(EXCLUDED.first_name, users.first_name)
+            RETURNING *
+            """,
+            user_id,
+            username,
+            first_name,
+            now,
+        ) or await self.get_user(user_id)
+
+    async def get_user(self, user_id: int) -> Optional[asyncpg.Record]:
+        return await self.fetchone(
+            "SELECT * FROM users WHERE user_id = $1",
+            (user_id,),
+        )
+
+    async def get_user_by_username(
+        self, username: str
+    ) -> Optional[asyncpg.Record]:
+        return await self.fetchone(
+            "SELECT * FROM users WHERE username ILIKE $1",
+            (username,),
+        )
+
+    async def get_users_in_chat(
+        self, chat_id: int
+    ) -> list[asyncpg.Record]:
+        return await self.fetchall(
+            """
+            SELECT u.user_id, u.username, u.first_name, m.last_seen_at
+            FROM users AS u
+            JOIN chat_members AS m ON m.user_id = u.user_id
+            WHERE m.chat_id = $1
+              AND m.status NOT IN ('left', 'kicked')
+              AND u.username IS NOT NULL
+            ORDER BY m.last_seen_at DESC
+            """,
+            (chat_id,),
+        )
+
+    async def get_chats_by_type(
+        self, *chat_types: str
+    ) -> list[asyncpg.Record]:
+        if not chat_types:
+            return await self.fetchall(
+                "SELECT * FROM chats ORDER BY chat_id"
+            )
+
+        placeholders = ", ".join(
+            f"${i}" for i in range(1, len(chat_types) + 1)
+        )
+
+        return await self.conn.fetch(
+            f"SELECT * FROM chats WHERE chat_type IN ({placeholders}) "
+            f"ORDER BY chat_id",
+            *chat_types,
+        )
+
+    async def get_unlinked_users(self) -> list[asyncpg.Record]:
+        return await self.fetchall(
+            """
+            SELECT u.user_id, u.username, u.first_name
+            FROM users AS u
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM chat_members AS m
+                WHERE m.user_id = u.user_id
+            )
+            ORDER BY u.updated_at DESC
+            """
+        )
+
+    async def upsert_chat_member(
+        self,
+        chat_id: int,
+        user_id: int,
+        *,
+        status: str = "member",
+        source: str = "live",
+    ) -> None:
+        now = _now()
+
+        # The old SQLite code assumes the referenced user/chat rows exist.
+        # Make this method safe for raw IDs just like the original design says.
+        await self.conn.execute(
+            """
+            INSERT INTO chats (
+                chat_id, chat_type, title, created_at, updated_at
+            )
+            VALUES ($1, 'unknown', NULL, $2, $2)
+            ON CONFLICT(chat_id) DO NOTHING
+            """,
+            chat_id,
+            now,
+        )
+
+        await self.conn.execute(
+            """
+            INSERT INTO users (
+                user_id, username, first_name, created_at, updated_at
+            )
+            VALUES ($1, NULL, NULL, $2, $2)
+            ON CONFLICT(user_id) DO NOTHING
+            """,
+            user_id,
+            now,
+        )
+
+        await self.conn.execute(
+            """
+            INSERT INTO chat_members (
+                chat_id, user_id, status, first_seen_at, joined_at,
+                left_at, last_seen_at, updated_at, source
+            )
+            VALUES ($1, $2, $3, $4, $4, NULL, $4, $4, $5)
+            ON CONFLICT(chat_id, user_id) DO UPDATE SET
+                status = CASE
+                    WHEN EXCLUDED.source = 'message'
+                         AND chat_members.status NOT IN ('left', 'kicked')
+                        THEN chat_members.status
+                    ELSE EXCLUDED.status
+                END,
+                joined_at = CASE
+                    WHEN chat_members.status IN ('left', 'kicked')
+                         AND EXCLUDED.status NOT IN ('left', 'kicked')
+                        THEN EXCLUDED.updated_at
+                    ELSE COALESCE(
+                        chat_members.joined_at,
+                        EXCLUDED.joined_at
+                    )
+                END,
+                left_at = CASE
+                    WHEN EXCLUDED.status IN ('left', 'kicked')
+                        THEN EXCLUDED.updated_at
+                    ELSE NULL
+                END,
+                last_seen_at = EXCLUDED.last_seen_at,
+                updated_at = EXCLUDED.updated_at,
+                source = EXCLUDED.source
+            """,
+            chat_id,
+            user_id,
+            status,
+            now,
+            source,
+        )
+
+    async def ensure_chat(
+        self,
+        chat_id: int,
+        chat_type: str,
+        title: Optional[str] = None,
+    ) -> asyncpg.Record:
+        now = _now()
+
+        row = await self.conn.fetchrow(
+            """
+            INSERT INTO chats (
+                chat_id, chat_type, title, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $4)
+            ON CONFLICT(chat_id) DO UPDATE SET
+                title      = EXCLUDED.title,
+                updated_at = EXCLUDED.updated_at
+            WHERE chats.title IS DISTINCT FROM EXCLUDED.title
+            RETURNING *
+            """,
+            chat_id,
+            chat_type,
+            title,
+            now,
+        )
+
+        if row is None:
+            row = await self.fetchone(
+                "SELECT * FROM chats WHERE chat_id = $1",
+                (chat_id,),
+            )
+
+        await self.conn.execute(
+            "INSERT INTO chat_settings (chat_id) VALUES ($1) "
+            "ON CONFLICT(chat_id) DO NOTHING",
+            chat_id,
+        )
+
+        return row
+
+    async def get_chat_setting(
+        self,
+        chat_id: int,
+        key: str,
+        default: Any = None,
+    ) -> Any:
+        row = await self.fetchone(
+            "SELECT settings FROM chat_settings WHERE chat_id = $1",
+            (chat_id,),
+        )
+
+        if row is None:
+            return default
+
+        return json.loads(row["settings"]).get(key, default)
+
+    async def set_chat_setting(
+        self,
+        chat_id: int,
+        key: str,
+        value: Any,
+    ) -> None:
+        now = _now()
+
+        await self.conn.execute(
+            """
+            INSERT INTO chats (
+                chat_id, chat_type, created_at, updated_at
+            )
+            VALUES ($1, 'unknown', $2, $2)
+            ON CONFLICT(chat_id) DO NOTHING
+            """,
+            chat_id,
+            now,
+        )
+
+        row = await self.fetchone(
+            "SELECT settings FROM chat_settings WHERE chat_id = $1",
+            (chat_id,),
+        )
+
+        data = json.loads(row["settings"]) if row else {}
+        data[key] = value
+
+        await self.conn.execute(
+            """
+            INSERT INTO chat_settings (chat_id, settings)
+            VALUES ($1, $2)
+            ON CONFLICT(chat_id) DO UPDATE
+            SET settings = EXCLUDED.settings
+            """,
+            chat_id,
+            json.dumps(data, ensure_ascii=False),
+        )
+
+    # -- economy (global wallets) ------------------------------------------
+
+    async def get_balance(self, user_id: int) -> int:
+        row = await self.fetchone(
+            "SELECT balance FROM wallets WHERE user_id = $1",
+            (user_id,),
+        )
+        return int(row["balance"]) if row else 0
+
+    async def _ensure_wallet(self, user_id: int) -> None:
+        now = _now()
+
+        await self.conn.execute(
+            """
+            INSERT INTO users (
+                user_id, created_at, updated_at
+            )
+            VALUES ($1, $2, $2)
+            ON CONFLICT(user_id) DO NOTHING
+            """,
+            user_id,
+            now,
+        )
+
+        await self.conn.execute(
+            """
+            INSERT INTO wallets (user_id, balance, updated_at)
+            VALUES ($1, 0, $2)
+            ON CONFLICT(user_id) DO NOTHING
+            """,
+            user_id,
+            now,
+        )
+
+    async def add_balance(
+        self,
+        user_id: int,
+        amount: int,
+        reason: str,
+        *,
+        allow_negative: bool = False,
+    ) -> int:
+        if amount == 0:
+            raise ValueError("amount must be non-zero")
+
+        await self._ensure_wallet(user_id)
+        now = _now()
+
+        if allow_negative:
+            row = await self.conn.fetchrow(
+                """
+                UPDATE wallets
+                SET balance = balance + $1, updated_at = $2
+                WHERE user_id = $3
+                RETURNING balance
+                """,
+                amount,
+                now,
+                user_id,
+            )
+        else:
+            row = await self.conn.fetchrow(
+                """
+                UPDATE wallets
+                SET balance = balance + $1, updated_at = $2
+                WHERE user_id = $3 AND balance + $1 >= 0
+                RETURNING balance
+                """,
+                amount,
+                now,
+                user_id,
+            )
+
+        if row is None:
+            raise InsufficientFunds(
+                f"user {user_id}: not enough coins for {amount:+d}"
+            )
+
+        balance = int(row["balance"])
+
+        await self.conn.execute(
+            """
+            INSERT INTO transactions (
+                user_id, amount, reason, balance_after, created_at
+            )
+            VALUES ($1, $2, $3, $4, $5)
+            """,
+            user_id,
+            amount,
+            reason,
+            balance,
+            now,
+        )
+
+        return balance
+
+    async def transfer(
+        self,
+        from_user: int,
+        to_user: int,
+        amount: int,
+        reason: str,
+    ) -> tuple[int, int]:
+        if amount <= 0:
+            raise ValueError("transfer amount must be positive")
+
+        if from_user == to_user:
+            raise ValueError("cannot transfer to self")
+
+        if (
+            await self.get_balance(to_user) == 0
+            and await self.get_user(to_user) is None
+        ):
+            raise UnknownUser(
+                f"user {to_user} has no wallet"
+            )
+
+        now = _now()
+        await self._ensure_wallet(from_user)
+        await self._ensure_wallet(to_user)
+
+        async with self.conn.transaction():
+            sender_row = await self.conn.fetchrow(
+                """
+                UPDATE wallets
+                SET balance = balance - $1, updated_at = $2
+                WHERE user_id = $3 AND balance >= $1
+                RETURNING balance
+                """,
+                amount,
+                now,
+                from_user,
+            )
+
+            if sender_row is None:
+                raise InsufficientFunds(
+                    f"user {from_user}: not enough coins to send {amount}"
+                )
+
+            receiver_row = await self.conn.fetchrow(
+                """
+                UPDATE wallets
+                SET balance = balance + $1, updated_at = $2
+                WHERE user_id = $3
+                RETURNING balance
+                """,
+                amount,
+                now,
+                to_user,
+            )
+
+            sender_bal = int(sender_row["balance"])
+            receiver_bal = int(receiver_row["balance"])
+
+            await self.conn.execute(
+                """
+                INSERT INTO transactions (
+                    user_id, amount, reason, balance_after, created_at
+                )
+                VALUES ($1, $2, $3, $4, $5),
+                       ($6, $7, $3, $8, $5)
+                """,
+                from_user,
+                -amount,
+                reason,
+                sender_bal,
+                now,
+                to_user,
+                amount,
+                receiver_bal,
+            )
+
+            return sender_bal, receiver_bal
+
+    async def get_transaction_history(
+        self,
+        user_id: int,
+        limit: int = 10,
+    ) -> list[asyncpg.Record]:
+        return await self.fetchall(
+            """
+            SELECT amount, reason, balance_after, created_at
+            FROM transactions
+            WHERE user_id = $1
+            ORDER BY created_at DESC, id DESC
+            LIMIT $2
+            """,
+            (user_id, limit),
+        )
+
+    async def get_leaderboard(
+        self,
+        limit: int = 10,
+    ) -> list[asyncpg.Record]:
+        return await self.fetchall(
+            """
+            SELECT w.user_id, w.balance, u.username, u.first_name
+            FROM wallets w
+            JOIN users u ON u.user_id = w.user_id
+            ORDER BY w.balance DESC
+            LIMIT $1
+            """,
+            (limit,),
+        )
+
+    # -- minigames ----------------------------------------------------------
+
+    async def record_minigame(
+        self,
+        user_id: int,
+        game: str,
+        *,
+        won: bool,
+        delta: int,
+    ) -> None:
+        await self._ensure_wallet(user_id)
+
+        await self.conn.execute(
+            """
+            INSERT INTO minigame_stats (
+                user_id, game, plays, wins, losses, net
+            )
+            VALUES ($1, $2, 1, $3, $4, $5)
+            ON CONFLICT(user_id, game) DO UPDATE SET
+                plays  = minigame_stats.plays + 1,
+                wins   = minigame_stats.wins + EXCLUDED.wins,
+                losses = minigame_stats.losses + EXCLUDED.losses,
+                net    = minigame_stats.net + EXCLUDED.net
+            """,
+            user_id,
+            game,
+            1 if won else 0,
+            0 if won else 1,
+            delta,
+        )
+
+    async def get_minigame_stats(
+        self,
+        user_id: int,
+        game: Optional[str] = None,
+    ) -> list[asyncpg.Record]:
+        if game:
+            return await self.fetchall(
+                """
+                SELECT *
+                FROM minigame_stats
+                WHERE user_id = $1 AND game = $2
+                """,
+                (user_id, game),
+            )
+
+        return await self.fetchall(
+            """
+            SELECT *
+            FROM minigame_stats
+            WHERE user_id = $1
+            ORDER BY plays DESC
+            """,
+            (user_id,),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Self-test
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import asyncio
+
+    async def _self_test() -> None:
+        logging.basicConfig(level=logging.INFO)
+
+        db = Database()
+        await db.connect()
+
+        try:
+            u = await db.ensure_user(100, "abtin", "Abtin")
+            assert u["username"] == "abtin"
+
+            await db.ensure_user(100, "abtin_tm", "Abtin")
+            assert (await db.get_user(100))["username"] == "abtin_tm"
+
+            await db.ensure_chat(-100123, "supergroup", "Test Group")
+            await db.set_chat_setting(
+                -100123,
+                "welcome",
+                "خوش اومدی!",
+            )
+            assert (
+                await db.get_chat_setting(-100123, "welcome")
+                == "خوش اومدی!"
+            )
+            assert (
+                await db.get_chat_setting(-100123, "nope", "dflt")
+                == "dflt"
+            )
+
+            assert await db.get_balance(100) == 0
+
+            b = await db.add_balance(100, 500, "self-test")
+            assert b == 500
+
+            try:
+                await db.add_balance(100, -600, "overspend")
+                raise AssertionError("should have raised")
+            except InsufficientFunds:
+                pass
+
+            await db.ensure_user(200, "sara", "Sara")
+            s_bal, r_bal = await db.transfer(
+                100, 200, 300, "gift"
+            )
+            assert (s_bal, r_bal) == (200, 300)
+
+            history = await db.get_transaction_history(100)
+            assert len(history) == 2
+
+            top = await db.get_leaderboard(5)
+            assert top[0]["user_id"] == 200
+
+            await db.record_minigame(
+                100, "coinflip", won=True, delta=50
+            )
+            await db.record_minigame(
+                100, "coinflip", won=False, delta=-40
+            )
+
+            stats = (
+                await db.get_minigame_stats(100, "coinflip")
+            )[0]
+
+            assert (
+                stats["plays"] == 2
+                and stats["wins"] == 1
+                and stats["net"] == 10
+            )
+
+            print("PostgreSQL database self-test OK ✅")
+
+        finally:
+            await db.close()
+
+    asyncio.run(_self_test())
