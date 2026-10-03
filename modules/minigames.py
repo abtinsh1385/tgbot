@@ -1,9 +1,8 @@
 from aiogram import Router, types, F
 from aiogram.filters import Command, CommandObject
 from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton
-from config import PANEL_URL  # یا یک متغیر جدا مثل GAMEMENU_URL
+from config import GAMEMENU_URL  # یا یک متغیر جدا مثل GAMEMENU_URL
 
-GAMEMENU_URL = PANEL_URL.replace("/panel", "/gamemenu")  # یا یک مقدار مستقل در .env
 router = Router(name="minigames")
 
 @router.message(Command("play"))
